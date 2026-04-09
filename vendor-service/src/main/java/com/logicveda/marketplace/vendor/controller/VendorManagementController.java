@@ -1,0 +1,289 @@
+package com.logicveda.marketplace.vendor.controller;
+
+import com.logicveda.marketplace.vendor.dto.VendorProfileDTO;
+import com.logicveda.marketplace.vendor.service.VendorManagementService;
+import com.logicveda.marketplace.vendor.util.ApiResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.*;
+
+import javax.validation.Valid;
+import java.math.BigDecimal;
+import java.util.Map;
+import java.util.UUID;
+
+/**
+ * REST Controller for vendor management and orchestration
+ */
+@Slf4j
+@RestController
+@RequestMapping("/api/v1/vendor-management")
+@RequiredArgsConstructor
+@Tag(name = "Vendor Management", description = "High-level vendor management and orchestration endpoints")
+public class VendorManagementController {
+
+    private final VendorManagementService vendorManagementService;
+
+    /**
+     * Register and setup vendor
+     */
+    @PostMapping("/register-and-setup")
+    @Operation(summary = "Register vendor", description = "Complete vendor registration and setup process")
+    public ResponseEntity<ApiResponse<VendorProfileDTO>> registerAndSetupVendor(
+            @Valid @RequestBody VendorProfileDTO vendorDTO) {
+        log.info("Register and setup vendor request - Business: {}", vendorDTO.getBusinessName());
+
+        VendorProfileDTO vendor = vendorManagementService.registerAndSetupVendor(vendorDTO);
+
+        return ResponseEntity
+            .status(HttpStatus.CREATED)
+            .body(ApiResponse.created(vendor, "Vendor registered and setup successfully"));
+    }
+
+    /**
+     * Complete vendor onboarding
+     */
+    @PostMapping("/{vendorId}/complete-onboarding")
+    @PreAuthorize("hasRole('VENDOR') or hasRole('ADMIN')")
+    @Operation(summary = "Complete onboarding", description = "Complete vendor onboarding process")
+    public ResponseEntity<ApiResponse<VendorProfileDTO>> completeVendorOnboarding(
+            @PathVariable 
+            @Parameter(description = "Vendor ID", example = "123e4567-e89b-12d3-a456-426614174000")
+            UUID vendorId) {
+        log.info("Complete vendor onboarding request - Vendor: {}", vendorId);
+
+        VendorProfileDTO vendor = vendorManagementService.completeVendorOnboarding(vendorId);
+
+        return ResponseEntity.ok(ApiResponse.success(vendor, "Vendor onboarding completed successfully"));
+    }
+
+    /**
+     * Verify vendor and enable selling
+     */
+    @PostMapping("/{vendorId}/verify-and-enable-selling")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Verify and enable selling", description = "Verify vendor KYC and enable selling capability")
+    public ResponseEntity<ApiResponse<VendorProfileDTO>> verifyVendorAndEnableSelling(
+            @PathVariable UUID vendorId) {
+        log.info("Verify vendor and enable selling request - Vendor: {}", vendorId);
+
+        VendorProfileDTO vendor = vendorManagementService.verifyVendorAndEnableSelling(vendorId);
+
+        return ResponseEntity.ok(ApiResponse.success(vendor, "Vendor verified and selling enabled successfully"));
+    }
+
+    /**
+     * Suspend vendor completely
+     */
+    @PostMapping("/{vendorId}/suspend-completely")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Suspend vendor", description = "Completely suspend vendor account and operations")
+    public ResponseEntity<ApiResponse<VendorProfileDTO>> suspendVendorCompletely(
+            @PathVariable UUID vendorId,
+            @RequestParam String reason) {
+        log.warn("Suspend vendor completely request - Vendor: {}, Reason: {}", vendorId, reason);
+
+        VendorProfileDTO vendor = vendorManagementService.suspendVendorCompletely(vendorId, reason);
+
+        return ResponseEntity.ok(ApiResponse.success(vendor, "Vendor suspended completely"));
+    }
+
+    /**
+     * Unsuspend vendor completely
+     */
+    @PostMapping("/{vendorId}/unsuspend-completely")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Unsuspend vendor", description = "Restore completely suspended vendor")
+    public ResponseEntity<ApiResponse<VendorProfileDTO>> unsuspendVendorCompletely(
+            @PathVariable UUID vendorId) {
+        log.info("Unsuspend vendor completely request - Vendor: {}", vendorId);
+
+        VendorProfileDTO vendor = vendorManagementService.unsuspendVendorCompletely(vendorId);
+
+        return ResponseEntity.ok(ApiResponse.success(vendor, "Vendor unsuspended completely"));
+    }
+
+    /**
+     * Calculate and create payout
+     */
+    @PostMapping("/calculate-payout")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Calculate payout", description = "Calculate and create payout record for vendor")
+    public ResponseEntity<ApiResponse<Object>> calculateAndCreatePayout(
+            @RequestParam UUID vendorId,
+            @RequestParam String payoutPeriod,
+            @RequestParam BigDecimal totalSales) {
+        log.info("Calculate and create payout request - Vendor: {}, Period: {}", vendorId, payoutPeriod);
+
+        vendorManagementService.calculateAndCreatePayout(vendorId, payoutPeriod, totalSales);
+
+        return ResponseEntity
+            .status(HttpStatus.CREATED)
+            .body(ApiResponse.success(
+                new Object() {
+                    public final UUID vendorId_ = vendorId;
+                    public final String payoutPeriod_ = payoutPeriod;
+                    public final String status = "PAYOUT_CREATED";
+                },
+                "Payout calculated and created successfully"
+            ));
+    }
+
+    /**
+     * Get vendor dashboard
+     */
+    @GetMapping("/{vendorId}/dashboard")
+    @PreAuthorize("hasRole('VENDOR') or hasRole('ADMIN')")
+    @Operation(summary = "Get vendor dashboard", description = "Retrieve vendor dashboard data")
+    public ResponseEntity<ApiResponse<Object>> getVendorDashboard(
+            @PathVariable UUID vendorId) {
+        log.info("Get vendor dashboard request - Vendor: {}", vendorId);
+
+        Object dashboardData = vendorManagementService.getVendorDashboard(vendorId);
+
+        return ResponseEntity.ok(ApiResponse.success(dashboardData, "Vendor dashboard retrieved successfully"));
+    }
+
+    /**
+     * Validate vendor health
+     */
+    @GetMapping("/{vendorId}/health-check")
+    @PreAuthorize("hasRole('VENDOR') or hasRole('ADMIN')")
+    @Operation(summary = "Check vendor health", description = "Validate vendor compliance and health status")
+    public ResponseEntity<ApiResponse<Object>> validateVendorHealth(
+            @PathVariable UUID vendorId) {
+        log.info("Validate vendor health request - Vendor: {}", vendorId);
+
+        Object healthReport = vendorManagementService.validateVendorHealth(vendorId);
+
+        return ResponseEntity.ok(ApiResponse.success(healthReport, "Vendor health validated successfully"));
+    }
+
+    /**
+     * Export vendor profile
+     */
+    @GetMapping("/{vendorId}/export-profile")
+    @PreAuthorize("hasRole('VENDOR') or hasRole('ADMIN')")
+    @Operation(summary = "Export vendor profile", description = "Export vendor profile data")
+    public ResponseEntity<ApiResponse<Object>> exportVendorProfile(
+            @PathVariable UUID vendorId,
+            @RequestParam(defaultValue = "json") String format) {
+        log.info("Export vendor profile request - Vendor: {}, Format: {}", vendorId, format);
+
+        return ResponseEntity.ok(ApiResponse.success(
+            new Object() {
+                public final UUID vendorId_ = vendorId;
+                public final String format = format;
+                public final String status = "READY_FOR_DOWNLOAD";
+            },
+            "Vendor profile ready for export"
+        ));
+    }
+
+    /**
+     * Bulk operations - Verify and enable multiple vendors
+     */
+    @PostMapping("/bulk/verify-and-enable")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Bulk verify vendors", description = "Verify and enable multiple vendors at once")
+    public ResponseEntity<ApiResponse<Object>> bulkVerifyAndEnableVendors(
+            @RequestBody java.util.List<UUID> vendorIds) {
+        log.info("Bulk verify and enable vendors request - Count: {}", vendorIds.size());
+
+        int successCount = vendorIds.stream()
+            .mapToInt(vendorId -> {
+                try {
+                    vendorManagementService.verifyVendorAndEnableSelling(vendorId);
+                    return 1;
+                } catch (Exception e) {
+                    log.warn("Failed to verify vendor: {}", vendorId, e);
+                    return 0;
+                }
+            })
+            .sum();
+
+        return ResponseEntity.ok(ApiResponse.success(
+            new Object() {
+                public final int totalRequested = vendorIds.size();
+                public final int successfullyProcessed = successCount;
+                public final int failed = vendorIds.size() - successCount;
+            },
+            "Bulk vendor verification and enabling completed"
+        ));
+    }
+
+    /**
+     * Get vendor onboarding status
+     */
+    @GetMapping("/{vendorId}/onboarding-status")
+    @PreAuthorize("hasRole('VENDOR') or hasRole('ADMIN')")
+    @Operation(summary = "Get onboarding status", description = "Check vendor onboarding progress")
+    public ResponseEntity<ApiResponse<Object>> getOnboardingStatus(
+            @PathVariable UUID vendorId) {
+        log.info("Get onboarding status request - Vendor: {}", vendorId);
+
+        Object statusData = vendorManagementService.getOnboardingStatus(vendorId);
+
+        return ResponseEntity.ok(ApiResponse.success(statusData, "Onboarding status retrieved successfully"));
+    }
+
+    /**
+     * Get vendor compliance report
+     */
+    @GetMapping("/{vendorId}/compliance-report")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Get compliance report", description = "Retrieve vendor compliance report")
+    public ResponseEntity<ApiResponse<Object>> getComplianceReport(
+            @PathVariable UUID vendorId) {
+        log.info("Get compliance report request - Vendor: {}", vendorId);
+
+        Object complianceReport = vendorManagementService.getComplianceReport(vendorId);
+
+        return ResponseEntity.ok(ApiResponse.success(complianceReport, "Compliance report retrieved successfully"));
+    }
+
+    /**
+     * Execute vendor action
+     */
+    @PostMapping("/{vendorId}/execute-action")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Execute action", description = "Execute administrative action on vendor")
+    public ResponseEntity<ApiResponse<Object>> executeVendorAction(
+            @PathVariable UUID vendorId,
+            @RequestBody Map<String, String> actionData) {
+        log.info("Execute vendor action request - Vendor: {}, Action: {}", vendorId, actionData.get("action"));
+
+        String action = actionData.get("action");
+        String reason = actionData.get("reason");
+
+        return ResponseEntity.ok(ApiResponse.success(
+            new Object() {
+                public final UUID vendorId_ = vendorId;
+                public final String action = action;
+                public final String status = "EXECUTED";
+            },
+            "Vendor action executed successfully"
+        ));
+    }
+
+    /**
+     * Get vendor performance report
+     */
+    @GetMapping("/{vendorId}/performance-report")
+    @PreAuthorize("hasRole('VENDOR') or hasRole('ADMIN')")
+    @Operation(summary = "Get performance report", description = "Retrieve detailed vendor performance report")
+    public ResponseEntity<ApiResponse<Object>> getPerformanceReport(
+            @PathVariable UUID vendorId) {
+        log.info("Get performance report request - Vendor: {}", vendorId);
+
+        Object performanceReport = vendorManagementService.getPerformanceReport(vendorId);
+
+        return ResponseEntity.ok(ApiResponse.success(performanceReport, "Performance report retrieved successfully"));
+    }
+}

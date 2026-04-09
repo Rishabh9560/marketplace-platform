@@ -1,0 +1,159 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: vendor-service-monitor
+  namespace: marketplace
+  labels:
+    app: vendor-service
+    prometheus: kube-prometheus
+spec:
+  selector:
+    matchLabels:
+      app: vendor-service
+      tier: backend
+  endpoints:
+    - port: http
+      path: /api/v1/actuator/prometheus
+      interval: 30s
+      scrapeTimeout: 10s
+      relabelings:
+        - sourceLabels: [__meta_kubernetes_pod_name]
+          targetLabel: pod
+        - sourceLabels: [__meta_kubernetes_namespace]
+          targetLabel: namespace
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vendor-service-prometheus-rules
+  namespace: marketplace
+  labels:
+    app: vendor-service
+    prometheus: kube-prometheus
+data:
+  vendor-service-rules.yaml: |
+    groups:
+      - name: vendor-service.rules
+        interval: 30s
+        rules:
+          # Alert for high error rate
+          - alert: VendorServiceHighErrorRate
+            expr: |
+              (sum(rate(http_requests_total{app="vendor-service",status=~"5.."}[5m])) /
+               sum(rate(http_requests_total{app="vendor-service"}[5m]))) > 0.05
+            for: 5m
+            labels:
+              severity: warning
+              app: vendor-service
+            annotations:
+              summary: "High error rate detected in vendor-service"
+              description: "Error rate is {{ $value | humanizePercentage }} over 5m"
+          
+          # Alert for high latency
+          - alert: VendorServiceHighLatency
+            expr: |
+              histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{app="vendor-service"}[5m])) by (le)) > 1
+            for: 5m
+            labels:
+              severity: warning
+              app: vendor-service
+            annotations:
+              summary: "High latency detected in vendor-service"
+              description: "P95 latency is {{ $value }}s"
+          
+          # Alert for pod restarts
+          - alert: VendorServiceHighRestartRate
+            expr: |
+              rate(kube_pod_container_status_restarts_total{pod=~"vendor-service-.*"}[15m]) > 0.1
+            for: 5m
+            labels:
+              severity: warning
+              app: vendor-service
+            annotations:
+              summary: "High restart rate for vendor-service pods"
+              description: "Pod {{ $labels.pod }} is restarting frequently"
+          
+          # Alert for database connection issues
+          - alert: VendorServiceDatabaseConnectionIssues
+            expr: |
+              vendor_service_db_connections_available < 2
+            for: 5m
+            labels:
+              severity: critical
+              app: vendor-service
+            annotations:
+              summary: "Database connection availability critical"
+              description: "Available connections: {{ $value }}"
+          
+          # Alert for cache failures
+          - alert: VendorServiceCacheFailures
+            expr: |
+              rate(vendor_service_cache_failures_total[5m]) > 0.1
+            for: 5m
+            labels:
+              severity: warning
+              app: vendor-service
+            annotations:
+              summary: "Cache failures detected in vendor-service"
+              description: "Failure rate: {{ $value | humanize }}/sec"
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: vendor-service-alerts
+  namespace: marketplace
+  labels:
+    app: vendor-service
+    prometheus: kube-prometheus
+spec:
+  groups:
+    - name: vendor-service
+      interval: 30s
+      rules:
+        - alert: PodCrashLooping
+          expr: |
+            rate(kube_pod_container_status_restarts_total{namespace="marketplace",pod=~"vendor-service-.*"}[30m]) > 0.05
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Pod {{ $labels.pod }} is crash looping"
+            description: "Pod {{ $labels.namespace }}/{{ $labels.pod }} is crash looping"
+        
+        - alert: PodNotHealthy
+          expr: |
+            min_over_time(sum by(namespace, pod) (kube_pod_status_phase{namespace="marketplace", pod=~"vendor-service-.*",phase=~"Pending|Unknown|Failed"})[15m:1m]) > 0
+          for: 15m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Pod {{ $labels.pod }} is not healthy"
+            description: "Pod {{ $labels.namespace }}/{{ $labels.pod }} has been in a non-running state for longer than 15 minutes"
+        
+        - alert: ContainerOomKiller
+          expr: |
+            kube_pod_container_status_last_terminated_reason{reason="OOMKilled",namespace="marketplace",pod=~"vendor-service-.*"} > 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Container {{ $labels.pod }} has been OOM killed"
+            description: "Container {{ $labels.namespace }}/{{ $labels.pod }} has been OOM killed"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vendor-service-metrics
+  namespace: marketplace
+  labels:
+    app: vendor-service
+spec:
+  type: ClusterIP
+  ports:
+    - name: metrics
+      port: 8080
+      targetPort: http
+      protocol: TCP
+  selector:
+    app: vendor-service
+    tier: backend

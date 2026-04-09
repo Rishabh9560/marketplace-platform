@@ -1,0 +1,57 @@
+spring:
+  application:
+    name: vendor-service
+  profiles:
+    active: test
+  
+  datasource:
+    url: jdbc:h2:mem:testdb;MODE=PostgreSQL
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+    
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+        jdbc:
+          batch_size: 20
+          fetch_size: 50
+          
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+      
+logging:
+  level:
+    root: WARN
+    com.logicveda.marketplace: DEBUG
+    org.springframework.web: DEBUG
+    org.springframework.security: DEBUG
+    org.hibernate: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+app:
+  security:
+    jwt:
+      secret: test-secret-key-for-testing-only-1234567890abcdef
+      expiration: 86400000
+  cache:
+    enabled: true
+  async:
+    enabled: true

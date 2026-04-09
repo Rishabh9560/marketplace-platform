@@ -1,0 +1,336 @@
+package com.logicveda.marketplace.vendor.controller;
+
+import com.logicveda.marketplace.vendor.dto.VendorPayoutRecordDTO;
+import com.logicveda.marketplace.vendor.dto.PayoutSummaryDTO;
+import com.logicveda.marketplace.vendor.service.VendorPayoutService;
+import com.logicveda.marketplace.vendor.util.ApiResponse;
+import com.logicveda.marketplace.vendor.util.PaginationUtils;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.*;
+
+import javax.validation.Valid;
+import java.math.BigDecimal;
+import java.util.UUID;
+
+/**
+ * REST Controller for vendor payout management
+ */
+@Slf4j
+@RestController
+@RequestMapping("/api/v1/payouts")
+@RequiredArgsConstructor
+@Tag(name = "Payouts", description = "Vendor payout management endpoints")
+public class VendorPayoutController {
+
+    private final VendorPayoutService payoutService;
+
+    /**
+     * Create payout record
+     */
+    @PostMapping
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Create payout record", description = "Create new vendor payout record")
+    public ResponseEntity<ApiResponse<VendorPayoutRecordDTO>> createPayout(
+            @Valid @RequestBody VendorPayoutRecordDTO payoutDTO) {
+        log.info("Create payout request - Vendor: {}, Period: {}", 
+            payoutDTO.getVendorId(), payoutDTO.getPayoutPeriod());
+
+        VendorPayoutRecordDTO createdPayout = payoutService.createPayoutRecord(payoutDTO);
+
+        return ResponseEntity
+            .status(HttpStatus.CREATED)
+            .body(ApiResponse.created(createdPayout, "Payout record created successfully"));
+    }
+
+    /**
+     * Get payout by ID
+     */
+    @GetMapping("/{payoutId}")
+    @PreAuthorize("hasRole('VENDOR') or hasRole('ADMIN')")
+    @Operation(summary = "Get payout details", description = "Retrieve payout record by ID")
+    public ResponseEntity<ApiResponse<VendorPayoutRecordDTO>> getPayout(
+            @PathVariable 
+            @Parameter(description = "Payout ID", example = "123e4567-e89b-12d3-a456-426614174000")
+            UUID payoutId) {
+        log.info("Get payout request: {}", payoutId);
+
+        VendorPayoutRecordDTO payout = payoutService.getPayoutById(payoutId);
+
+        return ResponseEntity.ok(ApiResponse.success(payout, "Payout retrieved successfully"));
+    }
+
+    /**
+     * Schedule payout
+     */
+    @PostMapping("/{payoutId}/schedule")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Schedule payout", description = "Schedule payout for processing")
+    public ResponseEntity<ApiResponse<VendorPayoutRecordDTO>> schedulePayout(
+            @PathVariable UUID payoutId) {
+        log.info("Schedule payout request: {}", payoutId);
+
+        VendorPayoutRecordDTO scheduledPayout = payoutService.schedulePayout(payoutId);
+
+        return ResponseEntity.ok(ApiResponse.success(scheduledPayout, "Payout scheduled successfully"));
+    }
+
+    /**
+     * Process payout
+     */
+    @PostMapping("/{payoutId}/process")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Process payout", description = "Process vendor payout to bank account")
+    public ResponseEntity<ApiResponse<VendorPayoutRecordDTO>> processPayout(
+            @PathVariable UUID payoutId) {
+        log.info("Process payout request: {}", payoutId);
+
+        VendorPayoutRecordDTO processedPayout = payoutService.processPayout(payoutId);
+
+        return ResponseEntity.ok(ApiResponse.success(processedPayout, "Payout processed successfully"));
+    }
+
+    /**
+     * Process payout asynchronously
+     */
+    @PostMapping("/{payoutId}/process-async")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Process payout async", description = "Asynchronously process payout")
+    public ResponseEntity<ApiResponse<Object>> processPayoutAsync(
+            @PathVariable UUID payoutId) {
+        log.info("Process payout async request: {}", payoutId);
+
+        payoutService.processPayoutAsync(payoutId);
+
+        return ResponseEntity.accepted().body(ApiResponse.success(
+            new Object() {
+                public final String status = "PROCESSING";
+            },
+            "Payout processing started asynchronously"
+        ));
+    }
+
+    /**
+     * Mark payout as failed
+     */
+    @PostMapping("/{payoutId}/mark-failed")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Mark payout failed", description = "Mark payout as failed with reason")
+    public ResponseEntity<ApiResponse<VendorPayoutRecordDTO>> markPayoutAsFailed(
+            @PathVariable UUID payoutId,
+            @RequestParam String reason) {
+        log.warn("Mark payout as failed request: {} - Reason: {}", payoutId, reason);
+
+        VendorPayoutRecordDTO failedPayout = payoutService.markPayoutAsFailed(payoutId, reason);
+
+        return ResponseEntity.ok(ApiResponse.success(failedPayout, "Payout marked as failed"));
+    }
+
+    /**
+     * Retry failed payout
+     */
+    @PostMapping("/{payoutId}/retry")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Retry payout", description = "Retry failed payout processing")
+    public ResponseEntity<ApiResponse<VendorPayoutRecordDTO>> retryFailedPayout(
+            @PathVariable UUID payoutId) {
+        log.info("Retry failed payout request: {}", payoutId);
+
+        VendorPayoutRecordDTO retriedPayout = payoutService.retryFailedPayout(payoutId);
+
+        return ResponseEntity.ok(ApiResponse.success(retriedPayout, "Payout retry initiated"));
+    }
+
+    /**
+     * Get payouts for vendor
+     */
+    @GetMapping("/vendor/{vendorId}")
+    @PreAuthorize("hasRole('VENDOR') or hasRole('ADMIN')")
+    @Operation(summary = "Get vendor payouts", description = "Retrieve all payouts for vendor")
+    public ResponseEntity<ApiResponse<Page<VendorPayoutRecordDTO>>> getVendorPayouts(
+            @PathVariable UUID vendorId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        log.info("Get vendor payouts request - Vendor: {}, Page: {}", vendorId, page);
+
+        Pageable pageable = PaginationUtils.createPageable(page, size);
+        Page<VendorPayoutRecordDTO> payouts = payoutService.getVendorPayouts(vendorId, pageable);
+
+        return ResponseEntity.ok(ApiResponse.success(payouts, "Vendor payouts retrieved successfully"));
+    }
+
+    /**
+     * Get pending payouts
+     */
+    @GetMapping("/status/pending")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Get pending payouts", description = "Retrieve all pending payouts")
+    public ResponseEntity<ApiResponse<Page<VendorPayoutRecordDTO>>> getPendingPayouts(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        log.info("Get pending payouts request - Page: {}", page);
+
+        Pageable pageable = PaginationUtils.createPageable(page, size);
+        Page<VendorPayoutRecordDTO> payouts = payoutService.getPendingPayouts(pageable);
+
+        return ResponseEntity.ok(ApiResponse.success(payouts, "Pending payouts retrieved successfully"));
+    }
+
+    /**
+     * Get scheduled payouts
+     */
+    @GetMapping("/status/scheduled")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Get scheduled payouts", description = "Retrieve all scheduled payouts")
+    public ResponseEntity<ApiResponse<Page<VendorPayoutRecordDTO>>> getScheduledPayouts(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        log.info("Get scheduled payouts request - Page: {}", page);
+
+        Pageable pageable = PaginationUtils.createPageable(page, size);
+        Page<VendorPayoutRecordDTO> payouts = payoutService.getScheduledPayouts(pageable);
+
+        return ResponseEntity.ok(ApiResponse.success(payouts, "Scheduled payouts retrieved successfully"));
+    }
+
+    /**
+     * Get completed payouts
+     */
+    @GetMapping("/status/completed")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Get completed payouts", description = "Retrieve all completed payouts")
+    public ResponseEntity<ApiResponse<Page<VendorPayoutRecordDTO>>> getCompletedPayouts(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        log.info("Get completed payouts request - Page: {}", page);
+
+        Pageable pageable = PaginationUtils.createPageable(page, size);
+        Page<VendorPayoutRecordDTO> payouts = payoutService.getCompletedPayouts(pageable);
+
+        return ResponseEntity.ok(ApiResponse.success(payouts, "Completed payouts retrieved successfully"));
+    }
+
+    /**
+     * Get failed payouts
+     */
+    @GetMapping("/status/failed")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Get failed payouts", description = "Retrieve all failed payouts")
+    public ResponseEntity<ApiResponse<Page<VendorPayoutRecordDTO>>> getFailedPayouts(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        log.info("Get failed payouts request - Page: {}", page);
+
+        Pageable pageable = PaginationUtils.createPageable(page, size);
+        Page<VendorPayoutRecordDTO> payouts = payoutService.getFailedPayouts(pageable);
+
+        return ResponseEntity.ok(ApiResponse.success(payouts, "Failed payouts retrieved successfully"));
+    }
+
+    /**
+     * Get payout summary for vendor
+     */
+    @GetMapping("/vendor/{vendorId}/summary")
+    @PreAuthorize("hasRole('VENDOR') or hasRole('ADMIN')")
+    @Operation(summary = "Get payout summary", description = "Retrieve vendor payout summary")
+    public ResponseEntity<ApiResponse<PayoutSummaryDTO>> getPayoutSummary(
+            @PathVariable UUID vendorId) {
+        log.info("Get payout summary request - Vendor: {}", vendorId);
+
+        PayoutSummaryDTO summary = payoutService.getPayoutSummary(vendorId);
+
+        return ResponseEntity.ok(ApiResponse.success(summary, "Payout summary retrieved successfully"));
+    }
+
+    /**
+     * Get available payout balance
+     */
+    @GetMapping("/vendor/{vendorId}/available-balance")
+    @PreAuthorize("hasRole('VENDOR') or hasRole('ADMIN')")
+    @Operation(summary = "Get available balance", description = "Retrieve vendor available payout balance")
+    public ResponseEntity<ApiResponse<Object>> getAvailablePayoutBalance(
+            @PathVariable UUID vendorId) {
+        log.info("Get available payout balance request - Vendor: {}", vendorId);
+
+        BigDecimal balance = payoutService.getTotalPendingPayoutAmount(vendorId);
+
+        return ResponseEntity.ok(ApiResponse.success(
+            new Object() {
+                public final BigDecimal availableBalance = balance;
+            },
+            "Available balance retrieved successfully"
+        ));
+    }
+
+    /**
+     * Get total commission collected
+     */
+    @GetMapping("/analytics/total-commission")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Get total commission", description = "Retrieve total commission collected")
+    public ResponseEntity<ApiResponse<Object>> getTotalCommissionCollected(
+            @RequestParam String startPeriod,
+            @RequestParam String endPeriod) {
+        log.info("Get total commission collected request - Period: {} to {}", startPeriod, endPeriod);
+
+        BigDecimal totalCommission = payoutService.getTotalCommissionCollected(startPeriod, endPeriod);
+
+        return ResponseEntity.ok(ApiResponse.success(
+            new Object() {
+                public final BigDecimal totalCommission = totalCommission;
+                public final String period = startPeriod + " to " + endPeriod;
+            },
+            "Total commission retrieved successfully"
+        ));
+    }
+
+    /**
+     * Process batch payouts
+     */
+    @PostMapping("/batch/process")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Process batch payouts", description = "Process all pending/scheduled payouts asynchronously")
+    public ResponseEntity<ApiResponse<Object>> processBatchPayouts() {
+        log.info("Process batch payouts request");
+
+        payoutService.processBatchPayouts();
+
+        return ResponseEntity.accepted().body(ApiResponse.success(
+            new Object() {
+                public final String status = "BATCH_PROCESSING_STARTED";
+            },
+            "Batch payout processing started"
+        ));
+    }
+
+    /**
+     * Get payout statistics
+     */
+    @GetMapping("/stats")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Get payout statistics", description = "Retrieve payout statistics")
+    public ResponseEntity<ApiResponse<Object>> getPayoutStats() {
+        log.info("Get payout statistics request");
+
+        BigDecimal pendingAmount = payoutService.getTotalPendingPayoutAmount();
+        long pendingCount = payoutService.getTotalPendingPayoutCount();
+        long completedCount = payoutService.getTotalCompletedPayoutCount();
+
+        return ResponseEntity.ok(ApiResponse.success(
+            new Object() {
+                public final BigDecimal totalPendingAmount = pendingAmount;
+                public final long pendingPayouts = pendingCount;
+                public final long completedPayouts = completedCount;
+            },
+            "Payout statistics retrieved successfully"
+        ));
+    }
+}

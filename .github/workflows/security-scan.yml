@@ -1,0 +1,247 @@
+name: Security Scanning
+
+on:
+  push:
+    branches: [ main, develop ]
+  schedule:
+    - cron: '0 2 * * 0'  # Weekly on Sunday at 2 AM UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  dependency-check:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Run OWASP Dependency Check (Backend)
+      uses: dependency-check/Dependency-Check_Action@main
+      with:
+        path: './backend'
+        format: 'SARIF'
+        args: >
+          --enableProjectName
+          --project "Marketplace Backend"
+      continue-on-error: true
+    
+    - name: Upload backend dependency results
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: 'dependency-check-report.sarif'
+        category: 'backend-dependencies'
+      continue-on-error: true
+    
+    - name: Run OWASP Dependency Check (Frontend)
+      uses: dependency-check/Dependency-Check_Action@main
+      with:
+        path: './vendor-dashboard'
+        format: 'SARIF'
+        args: >
+          --enableProjectName
+          --project "Marketplace Frontend"
+      continue-on-error: true
+    
+    - name: Upload frontend dependency results
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: 'dependency-check-report.sarif'
+        category: 'frontend-dependencies'
+      continue-on-error: true
+
+  container-security:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Build backend image for scanning
+      uses: docker/build-push-action@v5
+      with:
+        context: ./backend
+        push: false
+        load: true
+        tags: marketplace-vendor-service:security-scan
+    
+    - name: Scan backend image with Trivy
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: marketplace-vendor-service:security-scan
+        format: 'sarif'
+        output: 'backend-trivy.sarif'
+    
+    - name: Upload backend image scan
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: backend-trivy.sarif
+        category: 'backend-container'
+      continue-on-error: true
+    
+    - name: Scan backend image for secrets
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: marketplace-vendor-service:security-scan
+        scan-type: 'secret'
+        format: 'table'
+      continue-on-error: true
+    
+    - name: Build frontend image for scanning
+      uses: docker/build-push-action@v5
+      with:
+        context: ./vendor-dashboard
+        push: false
+        load: true
+        tags: marketplace-vendor-dashboard:security-scan
+    
+    - name: Scan frontend image with Trivy
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: marketplace-vendor-dashboard:security-scan
+        format: 'sarif'
+        output: 'frontend-trivy.sarif'
+    
+    - name: Upload frontend image scan
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: frontend-trivy.sarif
+        category: 'frontend-container'
+      continue-on-error: true
+
+  code-scanning:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        language: ['java', 'javascript']
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v2
+      with:
+        languages: ${{ matrix.language }}
+    
+    - name: Set up Java for CodeQL (Java only)
+      if: matrix.language == 'java'
+      uses: actions/setup-java@v4
+      with:
+        java-version: '21'
+        distribution: 'temurin'
+        cache: maven
+    
+    - name: Autobuild
+      uses: github/codeql-action/autobuild@v2
+    
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v2
+      with:
+        category: /language:${{ matrix.language }}
+
+  secret-scanning:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: TruffleHog secret scanning
+      uses: trufflesecurity/trufflehog@main
+      with:
+        path: ./
+        base: ''
+        head: HEAD
+        extra_args: --debug --only-verified
+      continue-on-error: true
+    
+    - name: GitGuardian scan
+      uses: gitguardian/ggshield-action@v1
+      if: secrets.GITGUARDIAN_API_KEY != ''
+      with:
+        scan-path: ./
+      env:
+        GITGUARDIAN_API_KEY: ${{ secrets.GITGUARDIAN_API_KEY }}
+      continue-on-error: true
+
+  license-check:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Java
+      uses: actions/setup-java@v4
+      with:
+        java-version: '21'
+        distribution: 'temurin'
+        cache: maven
+    
+    - name: Check backend licenses
+      run: mvn --batch-mode license:check
+      working-directory: ./backend
+      continue-on-error: true
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+        cache: 'npm'
+        cache-dependency-path: 'vendor-dashboard/package-lock.json'
+    
+    - name: Check frontend licenses
+      run: npm audit --production
+      working-directory: ./vendor-dashboard
+      continue-on-error: true
+
+  security-report:
+    runs-on: ubuntu-latest
+    needs: [dependency-check, container-security, code-scanning, secret-scanning, license-check]
+    if: always()
+    
+    steps:
+    - name: Generate security report
+      run: |
+        echo "# Security Scan Report" > security-report.md
+        echo "" >> security-report.md
+        echo "## Scan Results" >> security-report.md
+        echo "- Dependency Check: ${{ needs.dependency-check.result }}" >> security-report.md
+        echo "- Container Security: ${{ needs.container-security.result }}" >> security-report.md
+        echo "- Code Scanning: ${{ needs.code-scanning.result }}" >> security-report.md
+        echo "- Secret Scanning: ${{ needs.secret-scanning.result }}" >> security-report.md
+        echo "- License Check: ${{ needs.license-check.result }}" >> security-report.md
+        echo "" >> security-report.md
+        echo "**Overall Status**: ${{ job.status }}" >> security-report.md
+    
+    - name: Upload security report
+      uses: actions/upload-artifact@v4
+      with:
+        name: security-report
+        path: security-report.md
+    
+    - name: Comment on PR with security report
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const report = fs.readFileSync('security-report.md', 'utf8');
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: '## 🔒 Security Scan Results\n\n' + report
+          });

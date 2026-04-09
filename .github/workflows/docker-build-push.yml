@@ -1,0 +1,237 @@
+name: Build & Push Docker Images
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'backend/**'
+      - 'vendor-dashboard/**'
+      - 'Dockerfile'
+      - '.github/workflows/docker-build-push.yml'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Docker image tag (default: git sha)'
+        required: false
+        default: ''
+
+env:
+  REGISTRY: ghcr.io
+  BACKEND_IMAGE_NAME: ${{ github.repository }}/marketplace-vendor-service
+  FRONTEND_IMAGE_NAME: ${{ github.repository }}/marketplace-vendor-dashboard
+
+jobs:
+  build-backend:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    
+    outputs:
+      backend-image-tag: ${{ steps.meta-backend.outputs.tags }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Log in to Docker Hub
+      uses: docker/login-action@v3
+      if: secrets.DOCKERHUB_USERNAME != ''
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+    
+    - name: Extract metadata for backend image
+      id: meta-backend
+      uses: docker/metadata-action@v5
+      with:
+        images: |
+          ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE_NAME }}
+          docker.io/${{ secrets.DOCKERHUB_USERNAME }}/marketplace-vendor-service
+        tags: |
+          type=ref,event=branch
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          type=sha,prefix={{branch}}-
+          type=raw,value=${{ github.event.inputs.tag }},enable=${{ github.event.inputs.tag != '' }}
+          type=raw,value=latest,enable={{is_default_branch}}
+    
+    - name: Build and push backend image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./backend
+        push: true
+        tags: ${{ steps.meta-backend.outputs.tags }}
+        labels: ${{ steps.meta-backend.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        platforms: linux/amd64,linux/arm64
+    
+    - name: Generate SBOM for backend
+      uses: anchore/sbom-action@v0
+      with:
+        image: ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE_NAME }}:latest
+        format: spdx-json
+        output-file: backend-sbom.spdx.json
+    
+    - name: Upload SBOM
+      uses: actions/upload-artifact@v4
+      with:
+        name: backend-sbom
+        path: backend-sbom.spdx.json
+    
+    - name: Scan backend image
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE_NAME }}:latest
+        format: 'sarif'
+        output: 'backend-trivy.sarif'
+    
+    - name: Upload backend scan results
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: backend-trivy.sarif
+        category: 'backend-docker-image'
+
+  build-frontend:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    
+    outputs:
+      frontend-image-tag: ${{ steps.meta-frontend.outputs.tags }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+        cache: 'npm'
+        cache-dependency-path: 'vendor-dashboard/package-lock.json'
+    
+    - name: Install dependencies
+      run: npm ci
+      working-directory: ./vendor-dashboard
+    
+    - name: Build production bundle
+      run: npm run build
+      working-directory: ./vendor-dashboard
+      env:
+        VITE_API_URL: https://api.vendor.marketplace.com/api/v1
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Log in to Docker Hub
+      uses: docker/login-action@v3
+      if: secrets.DOCKERHUB_USERNAME != ''
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+    
+    - name: Extract metadata for frontend image
+      id: meta-frontend
+      uses: docker/metadata-action@v5
+      with:
+        images: |
+          ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE_NAME }}
+          docker.io/${{ secrets.DOCKERHUB_USERNAME }}/marketplace-vendor-dashboard
+        tags: |
+          type=ref,event=branch
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          type=sha,prefix={{branch}}-
+          type=raw,value=${{ github.event.inputs.tag }},enable=${{ github.event.inputs.tag != '' }}
+          type=raw,value=latest,enable={{is_default_branch}}
+    
+    - name: Build and push frontend image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./vendor-dashboard
+        push: true
+        tags: ${{ steps.meta-frontend.outputs.tags }}
+        labels: ${{ steps.meta-frontend.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        platforms: linux/amd64,linux/arm64
+    
+    - name: Generate SBOM for frontend
+      uses: anchore/sbom-action@v0
+      with:
+        image: ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE_NAME }}:latest
+        format: spdx-json
+        output-file: frontend-sbom.spdx.json
+    
+    - name: Upload SBOM
+      uses: actions/upload-artifact@v4
+      with:
+        name: frontend-sbom
+        path: frontend-sbom.spdx.json
+    
+    - name: Scan frontend image
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE_NAME }}:latest
+        format: 'sarif'
+        output: 'frontend-trivy.sarif'
+    
+    - name: Upload frontend scan results
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: frontend-trivy.sarif
+        category: 'frontend-docker-image'
+
+  verify-images:
+    runs-on: ubuntu-latest
+    needs: [build-backend, build-frontend]
+    if: always()
+    
+    steps:
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Pull and verify backend image
+      run: |
+        docker pull ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE_NAME }}:latest
+        docker inspect ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE_NAME }}:latest
+        docker run --rm ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE_NAME }}:latest java -version
+    
+    - name: Pull and verify frontend image
+      run: |
+        docker pull ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE_NAME }}:latest
+        docker inspect ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE_NAME }}:latest
+    
+    - name: Check image sizes
+      run: |
+        BACKEND_SIZE=$(docker images ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE_NAME }}:latest --format='{{.Size}}')
+        FRONTEND_SIZE=$(docker images ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE_NAME }}:latest --format='{{.Size}}')
+        
+        echo "Backend image size: $BACKEND_SIZE"
+        echo "Frontend image size: $FRONTEND_SIZE"

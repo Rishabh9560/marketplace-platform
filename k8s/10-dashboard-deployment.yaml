@@ -1,0 +1,189 @@
+---
+# Vendor Dashboard Frontend Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vendor-dashboard
+  namespace: marketplace
+  labels:
+    app: vendor-dashboard
+    tier: frontend
+    version: "1.0"
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: vendor-dashboard
+      tier: frontend
+  template:
+    metadata:
+      labels:
+        app: vendor-dashboard
+        tier: frontend
+        version: "1.0"
+      annotations:
+        prometheus.io/scrape: "false"
+    spec:
+      serviceAccountName: vendor-dashboard
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - vendor-dashboard
+                topologyKey: kubernetes.io/hostname
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 50
+              nodeSelector:
+                matchExpressions:
+                  - key: node.kubernetes.io/instance-type
+                    operator: In
+                    values:
+                      - t3.small
+                      - t3.medium
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: dashboard
+          image: marketplace-vendor-dashboard:1.0.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: VITE_API_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: dashboard-config
+                  key: API_URL
+          envFrom:
+            - configMapRef:
+                name: dashboard-config
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+              httpHeaders:
+                - name: User-Agent
+                  value: Kubernetes-Health-Check
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+              httpHeaders:
+                - name: User-Agent
+                  value: Kubernetes-Health-Check
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          startupProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 0
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 30
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 5"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: cache
+              mountPath: /app/.cache
+            - name: node-modules-cache
+              mountPath: /app/node_modules/.cache
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 512Mi
+        - name: cache
+          emptyDir:
+            sizeLimit: 256Mi
+        - name: node-modules-cache
+          emptyDir:
+            sizeLimit: 256Mi
+
+---
+# ServiceAccount for vendor-dashboard
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vendor-dashboard
+  namespace: marketplace
+  labels:
+    app: vendor-dashboard
+
+---
+# Role for vendor-dashboard
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: vendor-dashboard
+  namespace: marketplace
+  labels:
+    app: vendor-dashboard
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get"]
+
+---
+# RoleBinding for vendor-dashboard
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: vendor-dashboard
+  namespace: marketplace
+  labels:
+    app: vendor-dashboard
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: vendor-dashboard
+subjects:
+  - kind: ServiceAccount
+    name: vendor-dashboard
+    namespace: marketplace

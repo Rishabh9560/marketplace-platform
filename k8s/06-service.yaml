@@ -1,0 +1,62 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: vendor-service
+  namespace: marketplace
+  labels:
+    app: vendor-service
+    tier: backend
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+spec:
+  type: ClusterIP
+  selector:
+    app: vendor-service
+    tier: backend
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+    - name: debug
+      port: 5005
+      targetPort: debug
+      protocol: TCP
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 3600
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vendor-service-headless
+  namespace: marketplace
+  labels:
+    app: vendor-service
+    tier: backend
+spec:
+  type: ClusterIP
+  clusterIP: None  # Headless service
+  selector:
+    app: vendor-service
+    tier: backend
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+---
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: vendor-service-discovery
+  namespace: marketplace
+  labels:
+    app: vendor-service
+subsets:
+  - addresses:
+      - ip: 10.0.0.1
+    ports:
+      - name: http
+        port: 8080

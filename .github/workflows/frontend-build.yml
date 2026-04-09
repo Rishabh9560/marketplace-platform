@@ -1,0 +1,181 @@
+name: Frontend Build & Test
+
+on:
+  push:
+    branches: [ main, develop, "feature/**" ]
+    paths:
+      - 'vendor-dashboard/**'
+      - '.github/workflows/frontend-build.yml'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'vendor-dashboard/**'
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        node-version: ['20.x']
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+        cache-dependency-path: 'vendor-dashboard/package-lock.json'
+    
+    - name: Display Node version
+      run: node --version && npm --version
+    
+    - name: Install dependencies
+      run: npm ci
+      working-directory: ./vendor-dashboard
+    
+    - name: Run linting
+      run: npm run lint
+      working-directory: ./vendor-dashboard
+      continue-on-error: true
+    
+    - name: Type check with TypeScript
+      run: npm run type-check
+      working-directory: ./vendor-dashboard
+      continue-on-error: true
+    
+    - name: Run tests
+      run: npm run test -- --run
+      working-directory: ./vendor-dashboard
+      continue-on-error: true
+    
+    - name: Build production bundle
+      run: npm run build
+      working-directory: ./vendor-dashboard
+      env:
+        VITE_API_URL: https://api.vendor.marketplace.com/api/v1
+    
+    - name: Generate bundle report
+      run: npm run build:visualize
+      working-directory: ./vendor-dashboard
+      continue-on-error: true
+    
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: frontend-dist-${{ matrix.node-version }}
+        path: vendor-dashboard/dist/
+    
+    - name: Upload coverage report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: frontend-coverage-${{ matrix.node-version }}
+        path: vendor-dashboard/coverage/
+      continue-on-error: true
+    
+    - name: Check bundle size
+      run: |
+        DIST_SIZE=$(du -sh vendor-dashboard/dist/ | cut -f1)
+        echo "Bundle size: $DIST_SIZE"
+        
+        DIST_BYTES=$(du -sb vendor-dashboard/dist/ | cut -f1)
+        MAX_BYTES=$((20 * 1024 * 1024))  # 20MB max
+        
+        if [ "$DIST_BYTES" -gt "$MAX_BYTES" ]; then
+          echo "⚠️  Bundle size exceeds 20MB limit: $DIST_SIZE"
+          exit 1
+        fi
+      working-directory: ./vendor-dashboard
+
+  security-scan:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+        cache: 'npm'
+        cache-dependency-path: 'vendor-dashboard/package-lock.json'
+    
+    - name: Install dependencies
+      run: npm ci
+      working-directory: ./vendor-dashboard
+    
+    - name: Run npm audit
+      run: npm audit --audit-level=moderate
+      working-directory: ./vendor-dashboard
+      continue-on-error: true
+    
+    - name: Check for vulnerable dependencies
+      run: npm audit --production
+      working-directory: ./vendor-dashboard
+      continue-on-error: true
+    
+    - name: OWASP Dependency Check
+      uses: dependency-check/Dependency-Check_Action@main
+      with:
+        path: './vendor-dashboard'
+        format: 'SARIF'
+        args: >
+          --enableProjectName
+          --project "Marketplace Frontend"
+      continue-on-error: true
+    
+    - name: Upload OWASP results
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: 'dependency-check-report.sarif'
+        category: 'frontend-dependencies'
+      continue-on-error: true
+
+  build-docker-image:
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Download build artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: frontend-dist-20.x
+        path: vendor-dashboard/dist/
+    
+    - name: Build Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./vendor-dashboard
+        push: false
+        tags: marketplace-vendor-dashboard:test
+        platforms: linux/amd64,linux/arm64
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+    
+    - name: Scan Docker image with Trivy
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: marketplace-vendor-dashboard:test
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+      continue-on-error: true
+    
+    - name: Upload Trivy results
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
+        category: 'frontend-docker-scan'

@@ -1,0 +1,90 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vendor-service-config
+  namespace: marketplace
+  labels:
+    app: vendor-service
+    version: "1.0"
+data:
+  # Spring Boot Application Configuration
+  application.properties: |
+    spring.application.name=vendor-service
+    spring.profiles.active=k8s
+    
+    # Server Configuration
+    server.port=8080
+    server.servlet.context-path=/api/v1
+    server.compression.enabled=true
+    server.compression.min-response-size=1024
+    
+    # Actuator Configuration
+    management.endpoints.web.exposure.include=health,info,metrics,prometheus
+    management.endpoint.health.show-details=always
+    management.health.livenessState.enabled=true
+    management.health.readinessState.enabled=true
+    
+    # Logging Configuration
+    logging.level.root=INFO
+    logging.level.com.marketplace=DEBUG
+    logging.pattern.console=%d{yyyy-MM-dd HH:mm:ss} - %msg%n
+    
+    # JPA Configuration
+    spring.jpa.show-sql=false
+    spring.jpa.hibernate.ddl-auto=validate
+    spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.PostgreSQL10Dialect
+    spring.jpa.properties.hibernate.jdbc.batch_size=20
+    spring.jpa.properties.hibernate.order_inserts=true
+    spring.jpa.properties.hibernate.order_updates=true
+    
+    # Connection Pool Configuration
+    spring.datasource.hikari.maximum-pool-size=10
+    spring.datasource.hikari.minimum-idle=5
+    spring.datasource.hikari.connection-timeout=30000
+    spring.datasource.hikari.idle-timeout=600000
+    spring.datasource.hikari.max-lifetime=1800000
+    
+    # Cache Configuration
+    spring.cache.type=redis
+    spring.redis.timeout=60000ms
+    spring.redis.lettuce.pool.max-active=20
+    spring.redis.lettuce.pool.max-idle=10
+    
+    # Async Configuration
+    spring.task.execution.pool.core-size=5
+    spring.task.execution.pool.max-size=10
+    spring.task.execution.pool.queue-capacity=100
+    
+    # Scheduler Configuration
+    spring.task.scheduling.pool.size=5
+    spring.task.scheduling.thread-name-prefix=marketplace-scheduler
+    
+    # Security Configuration
+    security.jwt.secret=${JWT_SECRET}
+    security.jwt.expiration=86400000
+    security.cors.allowed-origins=http://localhost:3000,https://vendor.marketplace.com
+    security.cors.allowed-methods=GET,POST,PUT,PATCH,DELETE,OPTIONS
+    security.cors.max-age=3600
+    
+    # Application Configuration
+    app.vendor.commission-rate=5
+    app.vendor.max-upload-size=52428800
+    app.vendor.max-listings=1000
+    
+  # Logback Configuration
+  application-logback.xml: |
+    <?xml version="1.0" encoding="UTF-8"?>
+    <configuration>
+      <property name="LOG_PATTERN" value="%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"/>
+      <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <layout class="ch.qos.logback.classic.PatternLayout">
+          <pattern>${LOG_PATTERN}</pattern>
+        </layout>
+      </appender>
+      <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+      </root>
+      <logger name="com.marketplace" level="DEBUG"/>
+      <logger name="org.springframework" level="WARN"/>
+      <logger name="org.hibernate" level="WARN"/>
+    </configuration>

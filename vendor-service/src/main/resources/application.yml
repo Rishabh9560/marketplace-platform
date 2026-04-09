@@ -1,0 +1,152 @@
+spring:
+  application:
+    name: vendor-service
+    version: 1.0.0
+
+  # Server Configuration
+  server:
+    port: 8083
+    servlet:
+      context-path: /
+    compression:
+      enabled: true
+      min-response-size: 1024
+
+  # Database Configuration
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:marketplace_vendor}
+    username: ${DB_USER:marketplace}
+    password: ${DB_PASSWORD:marketplace_pass}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+
+  # JPA/Hibernate Configuration
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        jdbc:
+          batch_size: 20
+          fetch_size: 50
+        order_inserts: true
+        order_updates: true
+        generate_statistics: false
+        format_sql: true
+    open-in-view: false
+
+  # Jackson Configuration
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+      indent-output: true
+    deserialization:
+      fail-on-unknown-properties: false
+      accept-empty-string-as-null-object: true
+    default-property-inclusion: non_null
+
+  # Logging Configuration
+  output:
+    ansi:
+      enabled: always
+
+# Logging Configuration
+logging:
+  level:
+    root: INFO
+    com.logicveda.marketplace: DEBUG
+    org.springframework.web: DEBUG
+    org.hibernate.SQL: DEBUG
+    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+  pattern:
+    console: "%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: logs/vendor-service.log
+    max-size: 10MB
+    max-history: 10
+
+# Management Endpoints
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when-authorized
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+
+# Application Configuration
+app:
+  name: Vendor Service
+  version: 1.0.0
+  description: Marketplace Vendor Service
+  api:
+    version: v1
+    base-path: /api/v1
+
+# Service Configuration
+service:
+  # Commission configuration
+  vendor:
+    default-commission-rate: 10.00
+    min-commission-rate: 0.00
+    max-commission-rate: 100.00
+    premium-commission-discount: 2.00
+
+  # Payout configuration
+  payout:
+    minimum-amount: 10.00
+    default-cycle: MONTHLY
+    retry-max-attempts: 3
+    processing-days: 3
+
+  # KYC configuration
+  kyc:
+    required-for-selling: true
+    verification-timeout-days: 30
+    document-expiry-days: 365
+
+  # Listing configuration
+  listing:
+    default-shipping-days: 3
+    max-shipping-days: 30
+    min-shipping-days: 1
+
+# Feature Flags
+features:
+  enable-premium-vendors: true
+  enable-bulk-operations: true
+  enable-analytics: true
+  enable-caching: true
+
+# CORS Configuration
+cors:
+  allowed-origins: http://localhost:3000,http://localhost:5173
+  allowed-methods: GET,POST,PUT,DELETE,OPTIONS,PATCH
+  allowed-headers: "*"
+  max-age: 3600
+  allow-credentials: true
+
+# API Documentation
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    enabled: true
+    operations-sorter: method
+    tags-sorter: alpha
+    display-request-duration: true
+  show-actuator: true

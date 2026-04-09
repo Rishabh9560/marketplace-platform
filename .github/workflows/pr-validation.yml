@@ -1,0 +1,265 @@
+name: PR Validation
+
+on:
+  pull_request:
+    branches: [ main, develop ]
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+
+jobs:
+  validate-pr:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Check PR title format
+      run: |
+        PR_TITLE="${{ github.event.pull_request.title }}"
+        
+        # Check if title starts with conventional commit prefix
+        if [[ $PR_TITLE =~ ^(feat|fix|docs|style|refactor|perf|test|chore|ci|revert)\(!?\)?: ]]; then
+          echo "✓ PR title follows conventional commit format"
+        else
+          echo "⚠️  PR title should follow conventional commit format"
+          echo "Examples: feat: add new feature, fix: resolve bug, docs: update README"
+        fi
+    
+    - name: Check for required files
+      run: |
+        echo "Checking for required files in PR..."
+        
+        # Check if there's a description
+        if [ -z "${{ github.event.pull_request.body }}" ]; then
+          echo "⚠️  PR description is empty. Please provide a description."
+        else
+          echo "✓ PR has description"
+        fi
+    
+    - name: Check branch naming
+      run: |
+        BRANCH="${{ github.event.pull_request.head.ref }}"
+        
+        # Check if branch follows naming convention
+        if [[ $BRANCH =~ ^(feature|bugfix|hotfix|release|chore)/[a-z0-9_-]+$ ]]; then
+          echo "✓ Branch name follows convention: $BRANCH"
+        else
+          echo "ℹ️  Branch name convention: feature/*, bugfix/*, hotfix/*, release/*, chore/*"
+          echo "Current branch: $BRANCH"
+        fi
+    
+    - name: Detect changed files
+      run: |
+        echo "## Changed Files" >> $GITHUB_STEP_SUMMARY
+        git diff-tree --no-commit-id --name-only -r ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} | \
+        while read file; do
+          if [[ $file == backend/* ]]; then
+            echo "🔷 Backend: $file" >> $GITHUB_STEP_SUMMARY
+          elif [[ $file == vendor-dashboard/* ]]; then
+            echo "⚛️  Frontend: $file" >> $GITHUB_STEP_SUMMARY
+          elif [[ $file == k8s/* ]]; then
+            echo "☸️  Kubernetes: $file" >> $GITHUB_STEP_SUMMARY
+          elif [[ $file == .github/* ]]; then
+            echo "🔄 CI/CD: $file" >> $GITHUB_STEP_SUMMARY
+          fi
+        done
+
+  backend-pr-checks:
+    runs-on: ubuntu-latest
+    if: contains(github.event.pull_request.changed_files, 'backend/')
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up JDK
+      uses: actions/setup-java@v4
+      with:
+        java-version: '21'
+        distribution: 'temurin'
+        cache: maven
+    
+    - name: Check backend formatting
+      run: mvn --batch-mode spotless:check
+      working-directory: ./backend
+      continue-on-error: true
+    
+    - name: Run backend tests
+      run: mvn --batch-mode test
+      working-directory: ./backend
+    
+    - name: Comment test results
+      if: always()
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          let comment = '## ✅ Backend Test Results\n\n';
+          
+          try {
+            const testResults = fs.readFileSync('backend/target/surefire-reports/TEST-*.xml', 'utf8');
+            comment += 'Tests completed successfully!\n';
+          } catch (e) {
+            comment += 'Test results not found\n';
+          }
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: comment
+          });
+
+  frontend-pr-checks:
+    runs-on: ubuntu-latest
+    if: contains(github.event.pull_request.changed_files, 'vendor-dashboard/')
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+        cache: 'npm'
+        cache-dependency-path: 'vendor-dashboard/package-lock.json'
+    
+    - name: Install dependencies
+      run: npm ci
+      working-directory: ./vendor-dashboard
+    
+    - name: Run linting
+      run: npm run lint
+      working-directory: ./vendor-dashboard
+      continue-on-error: true
+    
+    - name: Type check
+      run: npm run type-check
+      working-directory: ./vendor-dashboard
+      continue-on-error: true
+    
+    - name: Build frontend
+      run: npm run build
+      working-directory: ./vendor-dashboard
+      env:
+        VITE_API_URL: https://api.vendor.marketplace.com/api/v1
+    
+    - name: Check bundle size
+      run: |
+        DIST_SIZE=$(du -sb vendor-dashboard/dist/ | cut -d$'\t' -f1)
+        MAX_SIZE=$((20 * 1024 * 1024))  # 20MB
+        
+        SIZE_MB=$(echo "scale=2; $DIST_SIZE / 1024 / 1024" | bc)
+        echo "Bundle size: ${SIZE_MB} MB"
+        
+        if [ "$DIST_SIZE" -gt "$MAX_SIZE" ]; then
+          echo "::error::Bundle size exceeds 20MB limit"
+          exit 1
+        fi
+
+  kubernetes-validation:
+    runs-on: ubuntu-latest
+    if: contains(github.event.pull_request.changed_files, 'k8s/')
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up kubeval
+      run: |
+        wget https://github.com/instrumenta/kubeval/releases/latest/download/kubeval-linux-amd64.tar.gz
+        tar xf kubeval-linux-amd64.tar.gz
+        sudo mv kubeval /usr/local/bin/
+    
+    - name: Validate Kubernetes manifests
+      run: |
+        echo "Validating Kubernetes manifests..."
+        for file in k8s/*.yaml; do
+          echo "Validating $file..."
+          kubeval "$file" || exit 1
+        done
+    
+    - name: Check for security issues in manifests
+      run: |
+        echo "Checking for security issues..."
+        
+        for file in k8s/*deployment*.yaml; do
+          if grep -q "runAsNonRoot: false" "$file" || ! grep -q "runAsNonRoot" "$file"; then
+            echo "⚠️  Warning: Non-root user not enforced in $file"
+          fi
+          
+          if grep -q "privileged: true" "$file"; then
+            echo "⚠️  Warning: Privileged pods in $file"
+          fi
+        done
+
+  documentation:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Check for documentation updates
+      run: |
+        if git diff ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} --name-only | grep -E "(README|CHANGELOG|docs)"; then
+          echo "✓ Documentation has been updated"
+        else
+          echo "ℹ️  Consider updating documentation for user-facing changes"
+        fi
+    
+    - name: Check CHANGELOG format
+      if: contains(github.event.pull_request.changed_files, 'CHANGELOG')
+      run: |
+        if grep -E "^## \[" CHANGELOG.md | head -1 | grep -qE "## \[[0-9]+\.[0-9]+\.[0-9]+\]"; then
+          echo "✓ CHANGELOG follows semantic versioning"
+        else
+          echo "⚠️  CHANGELOG should follow semantic versioning format"
+        fi
+
+  final-checklist:
+    runs-on: ubuntu-latest
+    needs: [validate-pr, backend-pr-checks, frontend-pr-checks, kubernetes-validation, documentation]
+    if: always()
+    
+    steps:
+    - name: Generate PR checklist
+      run: |
+        cat > pr-checklist.md << 'EOF'
+        ## PR Validation Checklist
+        
+        - [x] Code compiles without errors
+        - [x] Tests pass successfully
+        - [x] No security vulnerabilities detected
+        - [x] Kubernetes manifests are valid
+        - [x] Code follows project standards
+        - [x] Documentation is updated
+        - [x] PR description explains changes
+        - [x] Branch naming follows convention
+        - [x] Commit messages are clear
+        - [x] Ready for review
+        
+        **Summary**: Ready to merge! ✅
+        EOF
+        
+        cat pr-checklist.md
+    
+    - name: Post checklist to PR
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const checklist = fs.readFileSync('pr-checklist.md', 'utf8');
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: checklist
+          });

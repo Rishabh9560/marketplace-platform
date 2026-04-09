@@ -1,0 +1,136 @@
+---
+# Dashboard ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dashboard-config
+  namespace: marketplace
+  labels:
+    app: vendor-dashboard
+    tier: frontend
+data:
+  # API endpoint for backend service
+  API_URL: "http://vendor-service.marketplace.svc.cluster.local:8080/api/v1"
+  
+  # API endpoint for external access (used by browser)
+  VITE_API_URL: "https://api.vendor.marketplace.com/api/v1"
+  
+  # Application environment
+  NODE_ENV: "production"
+  
+  # Logging level
+  LOG_LEVEL: "info"
+  
+  # Cache configuration
+  CACHE_TIMEOUT: "3600"
+  
+  # Authentication
+  AUTH_TOKEN_STORAGE_KEY: "vendor_auth_token"
+  AUTH_REFRESH_INTERVAL: "900000"
+  
+  # Application settings
+  APP_NAME: "Vendor Dashboard"
+  APP_VERSION: "1.0.0"
+  
+  # Feature flags
+  FEATURE_ANALYTICS: "true"
+  FEATURE_EXPORT: "true"
+  FEATURE_KYC: "true"
+  
+  # UI Configuration
+  UI_THEME: "light"
+  UI_ITEMS_PER_PAGE: "10"
+  UI_MAX_UPLOAD_SIZE: "52428800"
+  
+  # Monitoring
+  SENTRY_DSN: ""
+  ANALYTICS_ENABLED: "false"
+  
+  # nginx configuration for frontend routing
+  nginx-config: |
+    server {
+      listen 3000;
+      server_name _;
+      client_max_body_size 50M;
+      
+      # Security headers
+      add_header X-Content-Type-Options "nosniff" always;
+      add_header X-Frame-Options "SAMEORIGIN" always;
+      add_header X-XSS-Protection "1; mode=block" always;
+      add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+      
+      # Gzip compression
+      gzip on;
+      gzip_vary on;
+      gzip_min_length 1024;
+      gzip_types text/plain text/css text/javascript application/json application/javascript;
+      
+      # Cache static assets
+      location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        access_log off;
+      }
+      
+      # SPA routing - send all requests to index.html
+      location / {
+        root /app/dist;
+        try_files $uri $uri/ /index.html;
+        index index.html;
+      }
+      
+      # Health check endpoint
+      location /health {
+        access_log off;
+        return 200 "healthy";
+        add_header Content-Type text/plain;
+      }
+    }
+
+---
+# HorizontalPodAutoscaler for vendor-dashboard
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: vendor-dashboard
+  namespace: marketplace
+  labels:
+    app: vendor-dashboard
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: vendor-dashboard
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 30
+        - type: Pods
+          value: 1
+          periodSeconds: 30
+      selectPolicy: Max
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 50
+          periodSeconds: 60
+      selectPolicy: Min

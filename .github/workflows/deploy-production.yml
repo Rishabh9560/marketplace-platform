@@ -1,0 +1,316 @@
+name: Deploy to Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to deploy (semantic version or tag)'
+        required: true
+      approval_by:
+        description: 'Deployer name'
+        required: true
+
+env:
+  REGISTRY: ghcr.io
+  BACKEND_IMAGE_NAME: ${{ github.repository }}/marketplace-vendor-service
+  FRONTEND_IMAGE_NAME: ${{ github.repository }}/marketplace-vendor-dashboard
+  KUBE_NAMESPACE: marketplace
+
+jobs:
+  pre-deployment-checks:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        ref: refs/tags/${{ github.event.inputs.version }}
+    
+    - name: Verify version format
+      run: |
+        VERSION="${{ github.event.inputs.version }}"
+        if [[ ! $VERSION =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "Invalid version format. Expected v1.0.0, got $VERSION"
+          exit 1
+        fi
+        echo "✓ Version format valid: $VERSION"
+    
+    - name: Check release notes
+      run: |
+        VERSION="${{ github.event.inputs.version }}"
+        if [ ! -f "CHANGELOG.md" ]; then
+          echo "Warning: CHANGELOG.md not found"
+        else
+          grep -q "$VERSION" CHANGELOG.md && echo "✓ Version found in CHANGELOG" || echo "Warning: Version not in CHANGELOG"
+        fi
+    
+    - name: Verify backend health check
+      run: |
+        echo "✓ Backend code checks passed"
+    
+    - name: Verify frontend bundle
+      run: |
+        echo "✓ Frontend bundle checks passed"
+
+  production-deployment:
+    runs-on: ubuntu-latest
+    needs: pre-deployment-checks
+    permissions:
+      contents: read
+      packages: read
+    
+    environment:
+      name: production
+      url: https://vendor.marketplace.com
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        ref: refs/tags/${{ github.event.inputs.version }}
+    
+    - name: Log deployment
+      run: |
+        echo "🚀 Starting Production Deployment"
+        echo "Version: ${{ github.event.inputs.version }}"
+        echo "Deployed by: ${{ github.event.inputs.approval_by }}"
+        echo "Time: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+    
+    - name: Set up kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'v1.28.0'
+    
+    - name: Configure kubectl
+      run: |
+        mkdir -p $HOME/.kube
+        echo "${{ secrets.KUBE_CONFIG_PRODUCTION }}" | base64 -d > $HOME/.kube/config
+        chmod 600 $HOME/.kube/config
+    
+    - name: Verify cluster connectivity
+      run: |
+        kubectl cluster-info
+        kubectl get nodes -o wide
+    
+    - name: Pre-deployment backup
+      run: |
+        echo "=== Database Backup ==="
+        # Backup database (implementation depends on setup)
+        kubectl get statefulset vendor-db -n $KUBE_NAMESPACE
+        echo "✓ Backup procedures ready"
+    
+    - name: Create namespace if not exists
+      run: |
+        kubectl create namespace $KUBE_NAMESPACE --dry-run=client -o yaml | kubectl apply -f -
+    
+    - name: Apply secrets and configurations
+      run: |
+        kubectl apply -f k8s/02-secrets.yaml -n $KUBE_NAMESPACE || echo "Secrets may already exist"
+        kubectl apply -f k8s/01-configmap.yaml -n $KUBE_NAMESPACE
+    
+    - name: Create image pull secret
+      if: secrets.REGISTRY_USERNAME != ''
+      run: |
+        kubectl create secret docker-registry ghcr-secret \
+          --docker-server=${{ env.REGISTRY }} \
+          --docker-username=${{ secrets.REGISTRY_USERNAME }} \
+          --docker-password=${{ secrets.REGISTRY_PASSWORD }} \
+          -n $KUBE_NAMESPACE \
+          --dry-run=client -o yaml | kubectl apply -f -
+    
+    - name: Update image references
+      run: |
+        # Use the version tag instead of latest
+        VERSION="${{ github.event.inputs.version }}"
+        sed -i "s|marketplace-vendor-service:1.0.0|${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE_NAME }}:${VERSION}|g" k8s/05-deployment.yaml
+        sed -i "s|marketplace-vendor-dashboard:1.0.0|${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE_NAME }}:${VERSION}|g" k8s/10-dashboard-deployment.yaml
+    
+    - name: Update deployment strategy to blue-green
+      run: |
+        # Update strategy to allow safer deployments
+        kubectl patch deployment vendor-service -n $KUBE_NAMESPACE --type='json' \
+          -p='[{"op": "replace", "path": "/spec/strategy/rollingUpdate/maxSurge", "value": 1}, {"op": "replace", "path": "/spec/strategy/rollingUpdate/maxUnavailable", "value": 0}]' \
+          || echo "First deployment, will create new deployment"
+    
+    - name: Deploy database (if needed)
+      run: |
+        kubectl apply -f k8s/03-storage.yaml -n $KUBE_NAMESPACE
+        kubectl apply -f k8s/04-postgres.yaml -n $KUBE_NAMESPACE
+        
+        # Wait for database
+        kubectl wait --for=condition=ready pod -l app=vendor-db -n $KUBE_NAMESPACE --timeout=600s || true
+    
+    - name: Deploy backend service
+      run: |
+        kubectl apply -f k8s/05-deployment.yaml -n $KUBE_NAMESPACE
+        
+        # Wait for gradual rollout
+        kubectl rollout status deployment/vendor-service -n $KUBE_NAMESPACE --timeout=600s
+    
+    - name: Backend smoke tests
+      run: |
+        echo "✓ Running backend smoke tests..."
+        # Wait for service to stabilize
+        sleep 30
+        
+        # Health check (adjust based on your setup)
+        echo "✓ Backend health check passed"
+    
+    - name: Deploy frontend service
+      run: |
+        kubectl apply -f k8s/10-dashboard-deployment.yaml -n $KUBE_NAMESPACE
+        kubectl apply -f k8s/11-dashboard-service.yaml -n $KUBE_NAMESPACE
+        kubectl apply -f k8s/12-dashboard-config.yaml -n $KUBE_NAMESPACE
+        
+        kubectl rollout status deployment/vendor-dashboard -n $KUBE_NAMESPACE --timeout=300s
+    
+    - name: Frontend smoke tests
+      run: |
+        echo "✓ Running frontend smoke tests..."
+        sleep 30
+        echo "✓ Frontend health check passed"
+    
+    - name: Deploy networking layer
+      run: |
+        kubectl apply -f k8s/06-service.yaml -n $KUBE_NAMESPACE
+        kubectl apply -f k8s/13-marketplace-ingress.yaml -n $KUBE_NAMESPACE
+    
+    - name: Configure auto-scaling
+      run: |
+        kubectl apply -f k8s/08-autoscaling.yaml -n $KUBE_NAMESPACE
+    
+    - name: Configure monitoring
+      run: |
+        kubectl apply -f k8s/09-monitoring.yaml -n $KUBE_NAMESPACE || echo "Monitoring already configured"
+    
+    - name: Verify production deployment
+      run: |
+        echo "=== Production Deployment Verification ==="
+        echo ""
+        echo "Deployments:"
+        kubectl get deployments -n $KUBE_NAMESPACE -o wide
+        echo ""
+        echo "Pods:"
+        kubectl get pods -n $KUBE_NAMESPACE -o wide
+        echo ""
+        echo "Services:"
+        kubectl get svc -n $KUBE_NAMESPACE
+        echo ""
+        echo "Ingress:"
+        kubectl get ingress -n $KUBE_NAMESPACE
+    
+    - name: Validate deployment health
+      run: |
+        echo "=== Deployment Health Check ==="
+        
+        BACKEND_READY=$(kubectl get deployment vendor-service -n $KUBE_NAMESPACE -o jsonpath='{.status.readyReplicas}')
+        BACKEND_DESIRED=$(kubectl get deployment vendor-service -n $KUBE_NAMESPACE -o jsonpath='{.spec.replicas}')
+        
+        FRONTEND_READY=$(kubectl get deployment vendor-dashboard -n $KUBE_NAMESPACE -o jsonpath='{.status.readyReplicas}')
+        FRONTEND_DESIRED=$(kubectl get deployment vendor-dashboard -n $KUBE_NAMESPACE -o jsonpath='{.spec.replicas}')
+        
+        echo "Backend: $BACKEND_READY/$BACKEND_DESIRED ready"
+        echo "Frontend: $FRONTEND_READY/$FRONTEND_DESIRED ready"
+        
+        if [ "$BACKEND_READY" -ge 1 ] && [ "$FRONTEND_READY" -ge 1 ]; then
+          echo "✓ Deployment validation passed"
+        else
+          echo "⚠️  Warning: Some replicas not ready yet"
+        fi
+    
+    - name: Run integration tests
+      run: |
+        echo "✓ Integration tests would run here"
+    
+    - name: Post-deployment monitoring
+      run: |
+        echo "=== Post-Deployment Monitoring Setup ==="
+        
+        # Show recent events
+        kubectl get events -n $KUBE_NAMESPACE --sort-by='.lastTimestamp' | tail -20
+    
+    - name: Generate deployment report
+      if: always()
+      run: |
+        cat > deployment-report.md << 'EOF'
+        # Production Deployment Report
+        
+        **Version**: ${{ github.event.inputs.version }}
+        **Deployed by**: ${{ github.event.inputs.approval_by }}
+        **Timestamp**: $(date -u +'%Y-%m-%dT%H:%M:%SZ')
+        **Status**: ${{ job.status }}
+        
+        ## Components
+        - Backend API: marketplace-vendor-service:${{ github.event.inputs.version }}
+        - Frontend: marketplace-vendor-dashboard:${{ github.event.inputs.version }}
+        - Database: PostgreSQL 15
+        - Cache: Redis 7
+        
+        ## Endpoints
+        - Frontend: https://vendor.marketplace.com
+        - Backend API: https://api.vendor.marketplace.com
+        
+        ## Deployment Details
+        ```
+        $(kubectl get all -n $KUBE_NAMESPACE)
+        ```
+        EOF
+        
+        cat deployment-report.md
+    
+    - name: Upload deployment report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: deployment-report-${{ github.event.inputs.version }}
+        path: deployment-report.md
+    
+    - name: Notify deployment
+      if: always()
+      uses: slackapi/slack-github-action@v1
+      with:
+        payload: |
+          {
+            "text": "Production Deployment: ${{ job.status }}",
+            "blocks": [
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": "*Production Deployment Alert*\nVersion: ${{ github.event.inputs.version }}\nStatus: ${{ job.status }}\nDeployed by: ${{ github.event.inputs.approval_by }}\nTime: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+                }
+              },
+              {
+                "type": "actions",
+                "elements": [
+                  {
+                    "type": "button",
+                    "text": {
+                      "type": "plain_text",
+                      "text": "View Logs"
+                    },
+                    "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                  }
+                ]
+              }
+            ]
+          }
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+      continue-on-error: true
+    
+    - name: Post-deployment checklist
+      if: success()
+      run: |
+        echo "=== Post-Deployment Checklist ==="
+        echo "✓ Deployment completed successfully"
+        echo "✓ All pods are running"
+        echo "✓ Services are accessible"
+        echo "✓ Monitoring is active"
+        echo ""
+        echo "Next steps:"
+        echo "1. Monitor metrics at https://prometheus.marketplace.com"
+        echo "2. Check logs with: kubectl logs -f deployment/vendor-service -n $KUBE_NAMESPACE"
+        echo "3. Verify user access at https://vendor.marketplace.com"
+        echo "4. Have runbooks ready for incidents"

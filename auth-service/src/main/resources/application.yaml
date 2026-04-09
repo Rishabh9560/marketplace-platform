@@ -1,0 +1,84 @@
+spring:
+  application:
+    name: auth-service
+  
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+        jdbc:
+          batch_size: 20
+        order_inserts: true
+        order_updates: true
+  
+  datasource:
+    url: jdbc:postgresql://localhost:5432/marketplace_auth
+    username: marketplace
+    password: marketplace123
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      idle-timeout: 600000
+      max-lifetime: 1800000
+  
+  flyway:
+    enabled: true
+    out-of-order: false
+    baseline-on-migrate: true
+  
+  redis:
+    host: localhost
+    port: 6379
+    timeout: 60000
+    jedis:
+      pool:
+        max-active: 8
+        max-idle: 8
+        min-idle: 0
+
+jwt:
+  secret: mySecretKeyForJWTEncodingAndDecodingThatIsAt32CharactersOrMore
+  access-token-expiration: 900000  # 15 minutes in milliseconds
+  refresh-token-expiration: 1209600000  # 14 days in milliseconds
+
+server:
+  port: 8081
+  servlet:
+    context-path: /
+  error:
+    include-message: always
+    include-stacktrace: never
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics,prometheus,info
+  endpoint:
+    health:
+      show-details: when-authorized
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+logging:
+  level:
+    root: INFO
+    com.logicveda.marketplace: DEBUG
+    org.springframework.security: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %logger{36} - %msg%n"
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    enabled: true
+    display-operation-id: true
+    groups-order: desc
+    operations-sorter: method

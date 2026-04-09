@@ -1,0 +1,236 @@
+version: '3.9'
+
+services:
+  # PostgreSQL Database
+  marketplace-postgres:
+    image: postgres:15-alpine
+    container_name: marketplace-postgres
+    environment:
+      POSTGRES_DB: marketplace
+      POSTGRES_USER: marketplace
+      POSTGRES_PASSWORD: Marketplace@123456789
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/01-init.sql
+    networks:
+      - marketplace
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U marketplace"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    command:
+      - "postgres"
+      - "-c"
+      - "max_connections=100"
+      - "-c"
+      - "shared_buffers=256MB"
+      - "-c"
+      - "effective_cache_size=1GB"
+
+  # Redis Cache
+  marketplace-redis:
+    image: redis:7-alpine
+    container_name: marketplace-redis
+    environment:
+      REDIS_PASSWORD: Redis@123456789
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - marketplace
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    command: redis-server --requirepass Redis@123456789 --appendonly yes
+
+  # Vendor Service
+  vendor-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: vendor-service
+    depends_on:
+      marketplace-postgres:
+        condition: service_healthy
+      marketplace-redis:
+        condition: service_healthy
+    environment:
+      # Spring Boot Configuration
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_APPLICATION_NAME: vendor-service
+      
+      # Database Configuration
+      SPRING_DATASOURCE_URL: jdbc:postgresql://marketplace-postgres:5432/marketplace
+      SPRING_DATASOURCE_USERNAME: marketplace
+      SPRING_DATASOURCE_PASSWORD: Marketplace@123456789
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SPRING_JPA_PROPERTIES_HIBERNATE_DIALECT: org.hibernate.dialect.PostgreSQL10Dialect
+      
+      # Redis Configuration
+      SPRING_REDIS_HOST: marketplace-redis
+      SPRING_REDIS_PORT: 6379
+      SPRING_REDIS_PASSWORD: Redis@123456789
+      SPRING_CACHE_TYPE: redis
+      
+      # Server Configuration
+      SERVER_PORT: 8080
+      SERVER_SERVLET_CONTEXT_PATH: /api/v1
+      
+      # Actuator Configuration
+      MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,info,metrics,prometheus
+      MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS: always
+      
+      # JWT Secret
+      SECURITY_JWT_SECRET: abcdefghijklmnopqrstuvwxyz0123456789012345678901234567890
+      
+      # CORS Configuration
+      SECURITY_CORS_ALLOWED_ORIGINS: http://localhost:3000,http://localhost:8080
+      
+      # Logging
+      LOGGING_LEVEL_ROOT: INFO
+      LOGGING_LEVEL_COM_MARKETPLACE: DEBUG
+    ports:
+      - "8080:8080"
+      - "5005:5005"
+    volumes:
+      - ./vendor-service:/app/vendor-service:ro
+      - vendor_app_logs:/app/logs
+    networks:
+      - marketplace
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/v1/actuator/health/liveness"]
+      interval: 15s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+
+  # Frontend - React Dashboard
+  vendor-dashboard:
+    build:
+      context: ./vendor-dashboard
+      dockerfile: Dockerfile
+    container_name: vendor-dashboard
+    environment:
+      VITE_API_URL: http://localhost:8080/api/v1
+      NODE_ENV: development
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./vendor-dashboard/src:/app/src
+      - ./vendor-dashboard/public:/app/public
+    networks:
+      - marketplace
+    depends_on:
+      - vendor-service
+    restart: unless-stopped
+
+  # pgAdmin - PostgreSQL Web UI
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: marketplace-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@marketplace.com
+      PGADMIN_DEFAULT_PASSWORD: admin@123
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_CONFIG_ENHANCED_COOKIE_PROTECTION: "True"
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - marketplace
+    depends_on:
+      - marketplace-postgres
+    restart: unless-stopped
+
+  # Redis Commander - Redis Web UI
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: marketplace-redis-commander
+    environment:
+      REDIS_HOSTS: local:marketplace-redis:6379:0:Redis@123456789
+    ports:
+      - "8081:8081"
+    networks:
+      - marketplace
+    depends_on:
+      - marketplace-redis
+    restart: unless-stopped
+
+  # Prometheus - Metrics Collection
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: marketplace-prometheus
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    networks:
+      - marketplace
+    depends_on:
+      - vendor-service
+    restart: unless-stopped
+
+  # Grafana - Metrics Visualization
+  grafana:
+    image: grafana/grafana:latest
+    container_name: marketplace-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin@123
+      GF_INSTALL_PLUGINS: redis-datasource
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    networks:
+      - marketplace
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+  # Nginx - Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: marketplace-nginx
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "80:80"
+      - "443:443"
+    networks:
+      - marketplace
+    depends_on:
+      - vendor-service
+      - vendor-dashboard
+    restart: unless-stopped
+
+networks:
+  marketplace:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  vendor_app_logs:
+  pgadmin_data:
+  prometheus_data:
+  grafana_data:

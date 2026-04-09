@@ -1,0 +1,113 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Global Styles */
+* {
+  @apply transition-colors duration-200;
+}
+
+html {
+  @apply scroll-smooth;
+}
+
+body {
+  @apply bg-gray-50;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  @apply w-2;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-gray-200;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-gray-400 rounded-full hover:bg-gray-500;
+}
+
+/* Form Styles */
+input,
+textarea,
+select {
+  @apply focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+.animate-slideUp {
+  animation: slideUp 0.3s ease-in-out;
+}
+
+/* Utility Classes */
+.truncate-line {
+  @apply line-clamp-1;
+}
+
+.truncate-line-2 {
+  @apply line-clamp-2;
+}
+
+.truncate-line-3 {
+  @apply line-clamp-3;
+}
+
+.text-gradient {
+  @apply bg-gradient-to-r from-blue-600 to-blue-800 bg-clip-text text-transparent;
+}
+
+.card-shadow {
+  @apply shadow-md hover:shadow-lg transition-shadow;
+}
+
+/* Responsive Typography */
+@layer components {
+  .h1 {
+    @apply text-3xl md:text-4xl font-bold;
+  }
+
+  .h2 {
+    @apply text-2xl md:text-3xl font-bold;
+  }
+
+  .h3 {
+    @apply text-xl md:text-2xl font-semibold;
+  }
+
+  .h4 {
+    @apply text-lg md:text-xl font-semibold;
+  }
+
+  .body-lg {
+    @apply text-base md:text-lg;
+  }
+
+  .body-sm {
+    @apply text-sm md:text-base;
+  }
+}

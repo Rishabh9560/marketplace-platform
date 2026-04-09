@@ -1,0 +1,145 @@
+name: Backend Build & Test
+
+on:
+  push:
+    branches: [ main, develop, "feature/**" ]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-build.yml'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'backend/**'
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        java-version: ['21']
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Set up JDK ${{ matrix.java-version }}
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ matrix.java-version }}
+        distribution: 'temurin'
+        cache: maven
+    
+    - name: Display Java version
+      run: java -version
+    
+    - name: Run Maven clean
+      run: mvn --batch-mode clean
+      working-directory: ./backend
+    
+    - name: Run Maven compile
+      run: mvn --batch-mode compile
+      working-directory: ./backend
+    
+    - name: Run Maven tests
+      run: mvn --batch-mode test
+      working-directory: ./backend
+    
+    - name: Run Integration Tests
+      run: mvn --batch-mode verify -DskipUnitTests=false
+      working-directory: ./backend
+    
+    - name: Generate test report
+      if: always()
+      run: mvn --batch-mode surefire-report:report
+      working-directory: ./backend
+    
+    - name: Upload test results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-results-java-${{ matrix.java-version }}
+        path: backend/target/surefire-reports/
+    
+    - name: Upload coverage report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-report-java-${{ matrix.java-version }}
+        path: backend/target/site/
+    
+    - name: Publish test results
+      if: always()
+      uses: EnricoMi/publish-unit-test-result-action@v2
+      with:
+        files: backend/target/surefire-reports/TEST-*.xml
+        check_name: Backend Tests (Java ${{ matrix.java-version }})
+        comment_mode: update-last
+    
+    - name: Check code quality with SpotBugs
+      run: mvn --batch-mode spotbugs:check
+      working-directory: ./backend
+      continue-on-error: true
+    
+    - name: Generate SpotBugs report
+      if: always()
+      run: mvn --batch-mode spotbugs:spotbugs
+      working-directory: ./backend
+      continue-on-error: true
+    
+    - name: Build Docker image (for testing)
+      run: docker build -t marketplace-vendor-service:test .
+      working-directory: ./backend
+    
+    - name: Scan Docker image for vulnerabilities
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: marketplace-vendor-service:test
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+    
+    - name: Upload Trivy results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
+        category: 'backend-docker-scan'
+
+  code-quality:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Set up JDK
+      uses: actions/setup-java@v4
+      with:
+        java-version: '21'
+        distribution: 'temurin'
+        cache: maven
+    
+    - name: Run SonarQube scan
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      run: |
+        if [ ! -z "$SONAR_TOKEN" ]; then
+          mvn --batch-mode sonar:sonar \
+            -Dsonar.projectKey=marketplace-vendor-service \
+            -Dsonar.host.url=https://sonarcloud.io \
+            -Dsonar.login=$SONAR_TOKEN
+        else
+          echo "SonarQube token not configured. Skipping scan."
+        fi
+      working-directory: ./backend
+      continue-on-error: true
+    
+    - name: Check for security vulnerabilities
+      run: mvn --batch-mode org.owasp:dependency-check-maven:check
+      working-directory: ./backend
+      continue-on-error: true
