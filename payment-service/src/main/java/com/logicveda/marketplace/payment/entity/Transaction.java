@@ -36,6 +36,9 @@ public class Transaction {
     @Column(nullable = false)
     private UUID customerId;
 
+    @Column
+    private UUID vendorId; // Reference to Vendor Service
+
     @Column(nullable = false, unique = true, length = 100)
     private String stripePaymentMethodId; // Stripe token/PM ID
 

@@ -1,56 +1,96 @@
-import React, { useEffect } from 'react'
-import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
+import React, { useEffect, useState } from 'react'
+import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { Card, Badge, Button } from '@/components/common'
 import { formatCurrency, formatNumber, getStatusColor } from '@/lib/utils'
 import { useStatistics } from '@/hooks/useApi'
 import { useDashboardStore, useAuthStore } from '@/store'
 import { TrendingUp, ShoppingBag, DollarSign, Star, ArrowRight, AlertCircle } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { apiClient } from '@/lib/apiClient'
 
 export const DashboardPage: React.FC = () => {
   const { vendor } = useAuthStore()
-  const { data: stats, loading } = useStatistics()
-  const { summary, setSummary } = useDashboardStore()
-
-  // Mock data for charts
-  const salesData = [
-    { name: 'Mon', sales: 4000, commission: 240 },
-    { name: 'Tue', sales: 3000, commission: 180 },
-    { name: 'Wed', sales: 2000, commission: 120 },
-    { name: 'Thu', sales: 2780, commission: 167 },
-    { name: 'Fri', sales: 1890, commission: 113 },
-    { name: 'Sat', sales: 2390, commission: 143 },
-    { name: 'Sun', sales: 3490, commission: 209 },
-  ]
-
-  const categoryData = [
-    { name: 'Electronics', value: 35, fill: '#3B82F6' },
-    { name: 'Clothing', value: 25, fill: '#10B981' },
-    { name: 'Home & Garden', value: 20, fill: '#F59E0B' },
-    { name: 'Sports', value: 15, fill: '#EF4444' },
-    { name: 'Others', value: 5, fill: '#8B5CF6' },
-  ]
-
-  const performanceData = [
-    { name: 'New Orders', value: 2400, status: 'orders' },
-    { name: 'Fulfilled', value: 2210, status: 'fulfilled' },
-    { name: 'Cancelled', value: 290, status: 'cancelled' },
-    { name: 'Refunded', value: 200, status: 'refunded' },
-  ]
+  const { getVendorStats } = useStatistics()
+  const { summary, setSummary, loading, setLoading, setError } = useDashboardStore()
+  const [salesData, setSalesData] = useState<any[]>([])
+  const [categoryData, setCategoryData] = useState<any[]>([])
 
   useEffect(() => {
-    // Initialize dashboard summary
-    if (!summary) {
-      setSummary({
-        totalSales: 54321,
-        totalOrders: 156,
-        averageOrderValue: 348,
-        fulfillmentRate: 96,
-        returnRate: 2.4,
-        customerSatisfaction: 4.6,
-      })
+    // Fetch real vendor statistics when vendor changes
+    if (vendor?.id) {
+      loadVendorDashboard()
     }
-  }, [])
+  }, [vendor?.id])
+
+  const loadVendorDashboard = async () => {
+    setLoading(true)
+    try {
+      // Fetch vendor statistics
+      const stats = await getVendorStats(vendor!.id)
+      
+      // Fetch vendor sales trends
+      let salesChartData: any[] = []
+      let categoryChartData: any[] = []
+
+      try {
+        const trendsResponse = await apiClient.get(`/statistics/vendor/${vendor!.id}/sales-trend`)
+        // Handle different response formats
+        const trends = trendsResponse?.data || trendsResponse || {}
+        if (trends && typeof trends === 'object' && 'sales' in trends && Array.isArray((trends as any).sales)) {
+          salesChartData = (trends as any).sales
+        } else if (Array.isArray(trends)) {
+          salesChartData = trends
+        }
+      } catch (err) {
+        console.warn('Could not fetch sales trends:', err)
+        salesChartData = []
+      }
+
+      try {
+        const categoriesResponse = await apiClient.get(`/statistics/vendor/${vendor!.id}/category-sales`)
+        const categories = categoriesResponse?.data || categoriesResponse || []
+        if (Array.isArray(categories)) {
+          categoryChartData = categories.slice(0, 5)
+        }
+      } catch (err) {
+        console.warn('Could not fetch category sales:', err)
+        categoryChartData = []
+      }
+
+      // Update sales data from API
+      setSalesData(salesChartData)
+
+      // Update category data from API
+      setCategoryData(categoryChartData)
+
+      // Merge vendor profile data with statistics
+      const dashboardSummary = {
+        totalSales: stats?.totalSales || vendor?.totalSales || 0,
+        totalEarnings: stats?.totalEarnings || vendor?.totalEarnings || 0,
+        activeListings: stats?.activeListings || 0,
+        pendingPayouts: stats?.pendingPayouts || 0,
+        kycStatus: vendor?.kycStatus || 'PENDING',
+        performanceScore: stats?.performanceScore || 0,
+        averageRating: stats?.averageRating || vendor?.averageRating || 0,
+        totalOrders: stats?.totalOrders || 0,
+        averageOrderValue: stats?.averageOrderValue || 0,
+        fulfillmentRate: stats?.fulfillmentRate || 0,
+        returnRate: stats?.returnRate || 0,
+        customerSatisfaction: stats?.customerSatisfaction || stats?.averageRating || 0,
+      }
+
+      setSummary(dashboardSummary)
+      setError(null)
+    } catch (err) {
+      console.error('Failed to load vendor dashboard:', err)
+      setError(err instanceof Error ? err.message : 'Failed to load dashboard')
+      // Set default empty data if API fails
+      setSalesData([])
+      setCategoryData([])
+    } finally {
+      setLoading(false)
+    }
+  }
 
   if (loading) {
     return (
@@ -77,12 +117,20 @@ export const DashboardPage: React.FC = () => {
             Here's what's happening with your store today.
           </p>
         </div>
-        <Link to="/profile">
-          <Button variant="secondary" size="md">
-            View Profile
-            <ArrowRight className="w-4 h-4 ml-2" />
-          </Button>
-        </Link>
+        <div className="flex gap-3">
+          <Link to="/shop">
+            <Button variant="secondary" size="md">
+              🏪 View Shop
+              <ArrowRight className="w-4 h-4 ml-2" />
+            </Button>
+          </Link>
+          <Link to="/profile">
+            <Button variant="secondary" size="md">
+              View Profile
+              <ArrowRight className="w-4 h-4 ml-2" />
+            </Button>
+          </Link>
+        </div>
       </div>
 
       {/* KYC Status Alert */}
@@ -231,19 +279,24 @@ export const DashboardPage: React.FC = () => {
         <Card className="card-shadow">
           <h3 className="text-lg font-bold text-gray-900 mb-6">Performance Breakdown</h3>
           <div className="space-y-4">
-            {performanceData.map((item) => (
+            {[
+              { name: 'Fulfillment Rate', value: summary?.fulfillmentRate || 0, max: 100 },
+              { name: 'Customer Satisfaction', value: (summary?.customerSatisfaction || 0) * 20, max: 100 },
+              { name: 'Return Rate', value: summary?.returnRate || 0, max: 100 },
+              { name: 'Active Listings', value: Math.min((summary?.activeListings || 0) / 10, 100), max: 100 },
+            ].map((item) => (
               <div key={item.name}>
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-sm font-medium text-gray-700">{item.name}</span>
                   <span className="text-sm font-bold text-gray-900">
-                    {formatNumber(item.value)}
+                    {item.value.toFixed(1)}%
                   </span>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-2">
                   <div
-                    className="bg-blue-600 h-2 rounded-full"
+                    className="bg-blue-600 h-2 rounded-full transition-all"
                     style={{
-                      width: `${(item.value / 2400) * 100}%`,
+                      width: `${Math.min(item.value, 100)}%`,
                     }}
                   ></div>
                 </div>

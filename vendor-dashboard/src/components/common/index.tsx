@@ -55,7 +55,7 @@ export const Badge: React.FC<BadgeProps> = ({
 }
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'danger' | 'ghost'
+  variant?: 'primary' | 'secondary' | 'danger' | 'ghost' | 'outline'
   size?: 'sm' | 'md' | 'lg'
   children: React.ReactNode
   loading?: boolean
@@ -77,6 +77,7 @@ export const Button: React.FC<ButtonProps> = ({
     secondary: 'bg-gray-200 text-gray-800 hover:bg-gray-300',
     danger: 'bg-red-600 text-white hover:bg-red-700',
     ghost: 'bg-transparent text-gray-700 hover:bg-gray-100',
+    outline: 'border border-gray-300 text-gray-700 hover:bg-gray-50',
   }
 
   const sizes = {
@@ -122,8 +123,8 @@ export const Input: React.FC<InputProps> = ({ label, error, icon, className = ''
         <input
           className={classNames(
             'w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500',
-            icon && 'pl-10',
-            error && 'border-red-500',
+            { 'pl-10': !!icon },
+            { 'border-red-500': !!error },
             className
           )}
           {...props}

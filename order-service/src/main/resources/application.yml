@@ -1,0 +1,44 @@
+spring:
+  application:
+    name: order-service
+  
+  # Database Configuration
+  datasource:
+    url: jdbc:mysql://mysql:3306/marketplace_order?useSSL=false&serverTimezone=UTC&createDatabaseIfNotExist=true
+    username: root
+    password: root_password
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  
+  # JPA/Hibernate Configuration
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQL8Dialect
+
+# Stripe Configuration
+stripe:
+  api-key: ${STRIPE_API_KEY:sk_test_your_stripe_key}
+  webhook-secret: ${STRIPE_WEBHOOK_SECRET:whsec_test_your_webhook_secret}
+
+# Redis Configuration (for Idempotency)
+redis:
+  host: redis
+  port: 6379
+  timeout: 6000ms
+
+# Server Port
+server:
+  port: 8003
+
+logging:
+  level:
+    root: INFO
+    com.marketplace: DEBUG
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics

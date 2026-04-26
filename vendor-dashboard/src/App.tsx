@@ -19,7 +19,11 @@ import { CreateProductPage } from '@/pages/CreateProductPage'
 import { EditProductPage } from '@/pages/EditProductPage'
 import { PayoutHistoryPage } from '@/pages/PayoutHistoryPage'
 import { KYCVerificationPage } from '@/pages/KYCVerificationPage'
-import { ProfilePage } from '@/pages/ProfilePage'
+import { ShopPage } from '@/pages/ShopPage'
+import { VendorProfilePage } from '@/pages/VendorProfilePage'
+import { VendorProductsPage } from '@/pages/VendorProductsPage'
+import { VendorShippingPage } from '@/pages/VendorShippingPage'
+import { VendorPayoutDetailsPage } from '@/pages/VendorPayoutDetailsPage'
 
 // Protected Route Component
 interface ProtectedRouteProps {
@@ -158,7 +162,51 @@ const AppContent: React.FC = () => {
           path="/profile"
           element={
             <ProtectedRoute
-              component={<ProfilePage />}
+              component={<VendorProfilePage />}
+              isAuthenticated={isAuthenticated}
+            />
+          }
+        />
+
+        {/* Shop */}
+        <Route
+          path="/shop"
+          element={
+            <ProtectedRoute
+              component={<ShopPage />}
+              isAuthenticated={isAuthenticated}
+            />
+          }
+        />
+
+        {/* Products */}
+        <Route
+          path="/products"
+          element={
+            <ProtectedRoute
+              component={<VendorProductsPage />}
+              isAuthenticated={isAuthenticated}
+            />
+          }
+        />
+
+        {/* Shipping & Delivery */}
+        <Route
+          path="/shipping"
+          element={
+            <ProtectedRoute
+              component={<VendorShippingPage />}
+              isAuthenticated={isAuthenticated}
+            />
+          }
+        />
+
+        {/* Payout Details */}
+        <Route
+          path="/payouts/details"
+          element={
+            <ProtectedRoute
+              component={<VendorPayoutDetailsPage />}
               isAuthenticated={isAuthenticated}
             />
           }

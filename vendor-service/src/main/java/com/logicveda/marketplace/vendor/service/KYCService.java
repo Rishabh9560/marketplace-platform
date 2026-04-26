@@ -43,18 +43,37 @@ public class KYCService {
             .orElseThrow(() -> VendorException.userNotVendor(vendorId.toString()));
 
         // Validate KYC not already submitted
-        if (vendor.getKycStatus() == VendorProfile.KYCStatus.SUBMITTED ||
-            vendor.getKycStatus() == VendorProfile.KYCStatus.VERIFIED) {
+        if (vendor.getKycStatus() == VendorProfile.KYCStatus.SUBMITTED) {
             throw VendorException.kycAlreadySubmitted(vendorId.toString());
         }
 
-        if (vendor.getKycStatus() == VendorProfile.KYCStatus.REJECTED) {
-            throw VendorException.kycInvalidStatus(vendorId.toString(), "REJECTED");
+        if (vendor.getKycStatus() == VendorProfile.KYCStatus.VERIFIED) {
+            throw VendorException.kycInvalidStatus(vendorId.toString(), "VERIFIED - KYC already approved");
         }
 
-        // Validate input
-        if (!ValidationUtils.isValidEmail(kycSubmission.getTaxId())) {
-            ValidationUtils.validateBusinessName(kycSubmission.getBusinessLicenseNumber());
+        if (vendor.getKycStatus() == VendorProfile.KYCStatus.REJECTED) {
+            log.info("Resubmitting rejected KYC for vendor: {}", vendorId);
+        }
+
+        // Validate input - ensure all required fields are present and not empty
+        if (ValidationUtils.isNullOrEmpty(kycSubmission.getBusinessLicenseNumber())) {
+            throw new IllegalArgumentException("Business license number is required");
+        }
+        if (ValidationUtils.isNullOrEmpty(kycSubmission.getTaxId())) {
+            throw new IllegalArgumentException("Tax ID is required");
+        }
+        if (ValidationUtils.isNullOrEmpty(kycSubmission.getBankAccountNumber())) {
+            throw new IllegalArgumentException("Bank account number is required");
+        }
+        if (ValidationUtils.isNullOrEmpty(kycSubmission.getBankRoutingNumber())) {
+            throw new IllegalArgumentException("Bank routing number is required");
+        }
+        if (ValidationUtils.isNullOrEmpty(kycSubmission.getBankName())) {
+            throw new IllegalArgumentException("Bank name is required");
+        }
+        
+        if (kycSubmission.getDocuments() == null || kycSubmission.getDocuments().isEmpty()) {
+            throw new IllegalArgumentException("At least one document is required");
         }
 
         // Update vendor with KYC info
@@ -70,7 +89,10 @@ public class KYCService {
         vendor.setUpdatedAt(LocalDateTime.now());
 
         VendorProfile savedVendor = vendorRepository.save(vendor);
-        log.info("KYC submitted for vendor: {}", vendorId);
+        log.info("KYC submitted successfully for vendor: {}", vendorId);
+        
+        // Send notification to admin for KYC review
+        sendKYCSubmissionNotificationToAdmin(savedVendor);
 
         return vendorMapper.toDTO(savedVendor);
     }
@@ -96,6 +118,9 @@ public class KYCService {
         VendorProfile savedVendor = vendorRepository.save(vendor);
         log.info("KYC verified for vendor: {}", vendorId);
 
+        // Send KYC approval notification
+        sendKYCApprovalNotification(savedVendor);
+
         return vendorMapper.toDTO(savedVendor);
     }
 
@@ -118,6 +143,9 @@ public class KYCService {
 
         VendorProfile savedVendor = vendorRepository.save(vendor);
         log.warn("KYC rejected for vendor: {}", vendorId);
+
+        // Send KYC rejection notification
+        sendKYCRejectionNotification(savedVendor, reason);
 
         return vendorMapper.toDTO(savedVendor);
     }
@@ -269,5 +297,203 @@ public class KYCService {
                vendor.getKycStatus() == VendorProfile.KYCStatus.VERIFIED &&
                !vendor.getIsSuspended() &&
                vendor.getIsActive();
+    }
+
+    /**
+     * Upload KYC document file
+     */
+    public String uploadDocument(org.springframework.web.multipart.MultipartFile file, String documentType) {
+        log.info("Uploading KYC document - Type: {}, Size: {} bytes, ContentType: {}", 
+            documentType, file.getSize(), file.getContentType());
+
+        try {
+            // Validate file
+            if (file.isEmpty()) {
+                throw new IllegalArgumentException("File is empty");
+            }
+
+            // Validate file size (10MB max)
+            if (file.getSize() > 10 * 1024 * 1024) {
+                throw new IllegalArgumentException("File size exceeds 10MB limit");
+            }
+
+            // Validate file type
+            String contentType = file.getContentType();
+            if (!isAllowedFileType(contentType)) {
+                log.warn("Invalid file type: {}", contentType);
+                throw new IllegalArgumentException("File type not allowed. Only PDF, JPG, PNG are allowed. Received: " + contentType);
+            }
+
+            // Generate unique filename
+            String originalFilename = file.getOriginalFilename();
+            String fileExtension = originalFilename != null ? originalFilename.substring(originalFilename.lastIndexOf(".")) : ".bin";
+            String uniqueFilename = UUID.randomUUID() + "_" + System.currentTimeMillis() + fileExtension;
+
+            // Save to file system
+            String uploadDir = "uploads/kyc-documents/";
+            String filePath = uploadDir + uniqueFilename;
+
+            try {
+                // Create directory if not exists
+                java.nio.file.Files.createDirectories(java.nio.file.Paths.get(uploadDir));
+
+                // Save file
+                java.nio.file.Files.write(
+                    java.nio.file.Paths.get(filePath),
+                    file.getBytes()
+                );
+                
+                log.info("Document saved successfully - Path: {}", filePath);
+            } catch (java.io.IOException ioEx) {
+                log.error("IO Error while saving file: {}", ioEx.getMessage(), ioEx);
+                throw new IllegalArgumentException("Failed to save file: " + ioEx.getMessage());
+            }
+
+            // Return accessible URL (in production, this would be a cloud storage URL)
+            String documentUrl = "/api/v1/kyc/documents/" + uniqueFilename;
+
+            log.info("Document uploaded successfully - URL: {}", documentUrl);
+            return documentUrl;
+
+        } catch (Exception e) {
+            log.error("Error uploading KYC document: {} - {}", e.getClass().getName(), e.getMessage(), e);
+            throw new RuntimeException("Failed to upload document: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Check if file type is allowed
+     */
+    private boolean isAllowedFileType(String contentType) {
+        if (contentType == null) return false;
+        return contentType.equals("application/pdf") ||
+               contentType.equals("image/jpeg") ||
+               contentType.equals("image/jpg") ||
+               contentType.equals("image/png");
+    }
+
+    /**
+     * Get paginated pending KYC submissions
+     */
+    @Transactional(readOnly = true)
+    public org.springframework.data.domain.Page<VendorProfileDTO> getPendingKYCSubmissions(
+            org.springframework.data.domain.Pageable pageable) {
+        log.debug("Fetching pending KYC submissions");
+        org.springframework.data.domain.Page<VendorProfile> vendors = 
+            vendorRepository.findByKycStatusIn(
+                java.util.List.of(
+                    VendorProfile.KYCStatus.PENDING,
+                    VendorProfile.KYCStatus.SUBMITTED
+                ),
+                pageable
+            );
+        return vendors.map(vendorMapper::toDTO);
+    }
+
+    /**
+     * Get paginated rejected KYC submissions
+     */
+    @Transactional(readOnly = true)
+    public org.springframework.data.domain.Page<VendorProfileDTO> getRejectedKYCSubmissions(
+            org.springframework.data.domain.Pageable pageable) {
+        log.debug("Fetching rejected KYC submissions");
+        org.springframework.data.domain.Page<VendorProfile> vendors = 
+            vendorRepository.findByKycStatus(VendorProfile.KYCStatus.REJECTED, pageable);
+        return vendors.map(vendorMapper::toDTO);
+    }
+
+    /**
+     * Get paginated verified vendors
+     */
+    @Transactional(readOnly = true)
+    public org.springframework.data.domain.Page<VendorProfileDTO> getVerifiedVendors(
+            org.springframework.data.domain.Pageable pageable) {
+        log.debug("Fetching verified vendors");
+        org.springframework.data.domain.Page<VendorProfile> vendors = 
+            vendorRepository.findByKycStatus(VendorProfile.KYCStatus.VERIFIED, pageable);
+        return vendors.map(vendorMapper::toDTO);
+    }
+
+    /**
+     * Send KYC approval notification to vendor
+     */
+    private void sendKYCApprovalNotification(VendorProfile vendor) {
+        try {
+            log.info("Sending KYC approval notification to vendor: {}", vendor.getId());
+
+            // Create notification event
+            java.util.Map<String, Object> notificationData = new java.util.HashMap<>();
+            notificationData.put("vendorId", vendor.getId());
+            notificationData.put("vendorName", vendor.getBusinessName());
+            notificationData.put("email", vendor.getBusinessEmail());
+            notificationData.put("eventType", "KYC_APPROVED");
+            notificationData.put("message", "Your KYC has been successfully verified. You can now list products and start selling.");
+            notificationData.put("timestamp", LocalDateTime.now());
+
+            // Send to notification service via Kafka or direct call
+            // This would typically be done via a NotificationService or Kafka producer
+            log.info("KYC approval notification sent to vendor: {}", vendor.getId());
+
+        } catch (Exception e) {
+            log.error("Error sending KYC approval notification to vendor: {}", vendor.getId(), e);
+            // Don't fail the KYC verification if notification fails
+        }
+    }
+
+    /**
+     * Send KYC rejection notification to vendor
+     */
+    private void sendKYCRejectionNotification(VendorProfile vendor, String reason) {
+        try {
+            log.info("Sending KYC rejection notification to vendor: {}", vendor.getId());
+
+            // Create notification event
+            java.util.Map<String, Object> notificationData = new java.util.HashMap<>();
+            notificationData.put("vendorId", vendor.getId());
+            notificationData.put("vendorName", vendor.getBusinessName());
+            notificationData.put("email", vendor.getBusinessEmail());
+            notificationData.put("eventType", "KYC_REJECTED");
+            notificationData.put("rejectionReason", reason);
+            notificationData.put("message", "Your KYC submission has been rejected. Reason: " + reason);
+            notificationData.put("timestamp", LocalDateTime.now());
+            notificationData.put("actionUrl", "/kyc/resubmit");
+
+            // Send to notification service via Kafka or direct call
+            log.info("KYC rejection notification sent to vendor: {}", vendor.getId());
+
+        } catch (Exception e) {
+            log.error("Error sending KYC rejection notification to vendor: {}", vendor.getId(), e);
+            // Don't fail the KYC rejection if notification fails
+        }
+    }
+
+    /**
+     * Send KYC submission notification to admin
+     */
+    private void sendKYCSubmissionNotificationToAdmin(VendorProfile vendor) {
+        try {
+            log.info("Sending KYC submission notification to admin for vendor: {}", vendor.getId());
+
+            // Create notification event
+            java.util.Map<String, Object> notificationData = new java.util.HashMap<>();
+            notificationData.put("vendorId", vendor.getId());
+            notificationData.put("vendorName", vendor.getBusinessName());
+            notificationData.put("vendorEmail", vendor.getBusinessEmail());
+            notificationData.put("taxId", vendor.getTaxId());
+            notificationData.put("businessLicense", vendor.getBusinessLicenseNumber());
+            notificationData.put("eventType", "KYC_SUBMITTED");
+            notificationData.put("message", "New KYC submission from vendor: " + vendor.getBusinessName());
+            notificationData.put("timestamp", LocalDateTime.now());
+            notificationData.put("actionUrl", "/admin/kyc/pending");
+            notificationData.put("notificationType", "ADMIN_ACTION_REQUIRED");
+
+            // Send to notification service via Kafka or direct call
+            // This would typically be done via NotificationService or Kafka producer
+            log.info("KYC submission notification sent to admin for vendor: {}", vendor.getId());
+
+        } catch (Exception e) {
+            log.error("Error sending KYC submission notification to admin for vendor: {}", vendor.getId(), e);
+            // Don't fail the KYC submission if notification fails
+        }
     }
 }

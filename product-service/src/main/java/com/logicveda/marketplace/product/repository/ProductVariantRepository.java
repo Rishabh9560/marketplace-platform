@@ -23,6 +23,7 @@ public interface ProductVariantRepository extends JpaRepository<ProductVariant, 
     /**
      * Find all variants by product.
      */
+    @Query("SELECT pv FROM ProductVariant pv WHERE pv.product.id = :productId")
     List<ProductVariant> findByProductId(UUID productId);
 
     /**
@@ -36,4 +37,11 @@ public interface ProductVariantRepository extends JpaRepository<ProductVariant, 
      * Check if SKU exists.
      */
     boolean existsBySku(String sku);
+
+    /**
+     * Find low stock variants by list of product IDs.
+     */
+    @Query("SELECT pv FROM ProductVariant pv WHERE pv.product.id IN :productIds " +
+           "AND pv.stockQuantity <= pv.lowStockThreshold")
+    List<ProductVariant> findByProductIdInAndIsLowStockTrue(List<UUID> productIds);
 }

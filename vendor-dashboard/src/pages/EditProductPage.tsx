@@ -4,7 +4,7 @@ import { Card, Button, Input, Select, Dialog } from '@/components/common'
 import { AlertCircle, Trash2, Save } from 'lucide-react'
 
 export const EditProductPage: React.FC = () => {
-  const { productId } = useParams<{ productId: string }>()
+  const { productId: _id } = useParams<{ productId: string }>()
   const navigate = useNavigate()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)

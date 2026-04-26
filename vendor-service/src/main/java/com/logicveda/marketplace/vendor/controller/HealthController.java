@@ -144,12 +144,12 @@ public class HealthController {
     public ResponseEntity<ApiResponse<Object>> getStatus() {
         log.debug("Status request");
 
-        String timestamp = LocalDateTime.now().format(DateTimeFormatter.ISO_DATE_TIME);
+        final String timestamp = LocalDateTime.now().format(DateTimeFormatter.ISO_DATE_TIME);
 
         return ResponseEntity.ok(ApiResponse.success(
             new Object() {
                 public final String status = "RUNNING";
-                public final String timestamp = timestamp;
+                public final String currentTimestamp = timestamp;
                 public final Map<String, String> components = createComponentStatusMap();
             },
             "Service status retrieved"

@@ -17,8 +17,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
-import javax.validation.Valid;
+import jakarta.validation.Valid;
 import java.util.UUID;
+import java.util.Map;
 
 /**
  * REST Controller for KYC (Know Your Customer) verification
@@ -40,13 +41,36 @@ public class KYCController {
     @Operation(summary = "Submit KYC", description = "Submit KYC documents for verification")
     public ResponseEntity<ApiResponse<VendorProfileDTO>> submitKYC(
             @Valid @RequestBody KYCSubmissionRequestDTO kycRequest) {
-        log.info("Submit KYC request - Vendor: {}", kycRequest.getVendorId());
+        // Extract vendor ID from authentication principal (should be vendor ID or user ID)
+        Object principal = org.springframework.security.core.context.SecurityContextHolder
+            .getContext().getAuthentication().getPrincipal();
+        String vendorIdStr = null;
+        
+        if (principal instanceof org.springframework.security.core.userdetails.UserDetails) {
+            vendorIdStr = ((org.springframework.security.core.userdetails.UserDetails) principal).getUsername();
+        } else if (principal instanceof String) {
+            vendorIdStr = (String) principal;
+        }
+        
+        if (vendorIdStr == null) {
+            throw new IllegalArgumentException("Unable to extract vendor ID from authentication context");
+        }
+        
+        UUID vendorId;
+        try {
+            vendorId = UUID.fromString(vendorIdStr);
+        } catch (IllegalArgumentException e) {
+            log.warn("Failed to parse vendor ID as UUID: {}", vendorIdStr);
+            throw new IllegalArgumentException("Invalid vendor ID format: " + vendorIdStr);
+        }
+        
+        log.info("Submit KYC request - Vendor: {}", vendorId);
 
-        VendorProfileDTO vendor = kycService.submitKYC(kycRequest.getVendorId(), kycRequest);
+        VendorProfileDTO vendor = kycService.submitKYC(vendorId, kycRequest);
 
         return ResponseEntity
             .status(HttpStatus.CREATED)
-            .body(ApiResponse.created(vendor, "KYC submitted successfully. Awaiting verification."));
+            .body(ApiResponse.created(vendor, "KYC submitted successfully. Awaiting admin verification."));
     }
 
     /**
@@ -109,11 +133,15 @@ public class KYCController {
         log.info("Get KYC status request - Vendor: {}", vendorId);
 
         boolean isVerified = kycService.isKYCVerified(vendorId);
+        String status = kycService.getKYCStatus(vendorId);
+
+        Map<String, Object> statusResponse = new java.util.HashMap<>();
+        statusResponse.put("verified", isVerified);
+        statusResponse.put("status", status);
+        statusResponse.put("rejectionReason", null);
 
         return ResponseEntity.ok(ApiResponse.success(
-            new Object() {
-                public final boolean verified = isVerified;
-            },
+            statusResponse,
             "KYC status retrieved successfully"
         ));
     }
@@ -128,11 +156,11 @@ public class KYCController {
             @PathVariable UUID vendorId) {
         log.info("Check KYC requirements - Vendor: {}", vendorId);
 
-        boolean requirementsMet = kycService.areKYCRequirementsMet(vendorId);
+        final boolean requirementsMet = kycService.areKYCRequirementsMet(vendorId);
 
         return ResponseEntity.ok(ApiResponse.success(
             new Object() {
-                public final boolean requirementsMet = requirementsMet;
+                public final boolean metRequirements = requirementsMet;
             },
             "KYC requirements checked successfully"
         ));
@@ -268,12 +296,37 @@ public class KYCController {
             @RequestParam(defaultValue = "pdf") String format) {
         log.info("Export KYC report request - Format: {}", format);
 
+        final String exportFormat = format;
         return ResponseEntity.ok(ApiResponse.success(
             new Object() {
-                public final String format = format;
+                public final String format = exportFormat;
                 public final String status = "READY_FOR_DOWNLOAD";
             },
             "KYC report ready for download"
+        ));
+    }
+
+    /**
+     * Upload KYC document
+     */
+    @PostMapping("/documents/upload")
+    @PreAuthorize("hasRole('VENDOR')")
+    @Operation(summary = "Upload KYC document", description = "Upload a single KYC document")
+    public ResponseEntity<ApiResponse<Object>> uploadKYCDocument(
+            @RequestParam("file") org.springframework.web.multipart.MultipartFile file,
+            @RequestParam("documentType") String documentType) {
+        log.info("Upload KYC document request - Type: {}, Size: {} bytes", documentType, file.getSize());
+
+        String uploadedUrl = kycService.uploadDocument(file, documentType);
+
+        Map<String, Object> uploadResponse = new java.util.HashMap<>();
+        uploadResponse.put("url", uploadedUrl);
+        uploadResponse.put("documentType", documentType);
+        uploadResponse.put("fileSize", file.getSize());
+
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.created(
+            uploadResponse,
+            "Document uploaded successfully"
         ));
     }
 }

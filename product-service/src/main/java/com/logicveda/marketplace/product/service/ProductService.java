@@ -1,8 +1,16 @@
 package com.logicveda.marketplace.product.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.logicveda.marketplace.common.exception.BusinessException;
 import com.logicveda.marketplace.common.exception.ResourceNotFoundException;
-import com.logicveda.marketplace.product.dto.ProductDtos.*;
+import com.logicveda.marketplace.product.dto.CategoryResponse;
+import com.logicveda.marketplace.product.dto.CreateProductRequest;
+import com.logicveda.marketplace.product.dto.CreateVariantRequest;
+import com.logicveda.marketplace.product.dto.ImageResponse;
+import com.logicveda.marketplace.product.dto.ProductResponse;
+import com.logicveda.marketplace.product.dto.UpdateProductRequest;
+import com.logicveda.marketplace.product.dto.UpdateVariantRequest;
+import com.logicveda.marketplace.product.dto.VariantResponse;
 import com.logicveda.marketplace.product.entity.*;
 import com.logicveda.marketplace.product.repository.*;
 import lombok.RequiredArgsConstructor;
@@ -34,6 +42,7 @@ public class ProductService {
     private final ProductImageRepository productImageRepository;
     private final CategoryRepository categoryRepository;
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ISO_DATE_TIME;
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     // ============= PRODUCT CREATION & MANAGEMENT =============
 
@@ -55,22 +64,21 @@ public class ProductService {
             });
 
         // Create product in DRAFT status
-        Product product = Product.builder()
-            .vendorId(vendorId)
-            .categoryId(category.getId())
-            .name(request.name())
-            .description(request.description())
-            .shortDescription(request.shortDescription())
-            .brand(request.brand())
-            .slug(slug)
-            .tags(request.tags() != null ? request.tags().toArray(new String[0]) : new String[0])
-            .status(Product.ProductStatus.DRAFT)
-            .isFeatured(false)
-            .averageRating(BigDecimal.ZERO)
-            .reviewCount(0)
-            .createdAt(LocalDateTime.now())
-            .updatedAt(LocalDateTime.now())
-            .build();
+        Product product = new Product();
+        product.setVendorId(vendorId);
+        product.setCategoryId(category.getId());
+        product.setName(request.name());
+        product.setDescription(request.description());
+        product.setShortDescription(request.shortDescription());
+        product.setBrand(request.brand());
+        product.setSlug(slug);
+        product.setTags(request.tags() != null ? request.tags().toArray(new String[0]) : new String[0]);
+        product.setStatus(Product.ProductStatus.DRAFT);
+        product.setIsFeatured(false);
+        product.setAverageRating(BigDecimal.ZERO);
+        product.setReviewCount(0);
+        product.setCreatedAt(LocalDateTime.now());
+        product.setUpdatedAt(LocalDateTime.now());
 
         product = productRepository.save(product);
         
@@ -160,7 +168,7 @@ public class ProductService {
      */
     public Page<ProductResponse> getProductsByCategory(UUID categoryId, Pageable pageable) {
         Page<Product> products = productRepository.findByCategoryIdAndStatus(
-            categoryId, Product.ProductStatus.DRAFT.name(), pageable);
+            categoryId, Product.ProductStatus.APPROVED, pageable);
         
         Category category = categoryRepository.findById(categoryId)
             .orElseThrow(() -> new ResourceNotFoundException("Category not found"));
@@ -194,30 +202,31 @@ public class ProductService {
                 throw new BusinessException("SKU already exists: " + request.sku());
             });
 
-        ProductVariant variant = ProductVariant.builder()
-            .productId(productId)
-            .sku(request.sku())
-            .name(request.name())
-            .attributes(request.attributes())
-            .price(request.price())
-            .compareAtPrice(request.compareAtPrice())
-            .costPrice(request.costPrice())
-            .stockQuantity(request.stockQuantity())
-            .lowStockThreshold(request.lowStockThreshold())
-            .build();
+        ProductVariant variant = new ProductVariant();
+        variant.setProduct(product);
+        variant.setSku(request.sku());
+        variant.setName(request.name());
+        // Convert Map attributes to JsonNode if present
+        if (request.attributes() != null) {
+            variant.setAttributes(OBJECT_MAPPER.valueToTree(request.attributes()));
+        }
+        variant.setPrice(request.price());
+        variant.setCompareAtPrice(request.compareAtPrice());
+        variant.setCostPrice(request.costPrice());
+        variant.setStockQuantity(request.stockQuantity());
+        variant.setLowStockThreshold(request.lowStockThreshold());
 
         variant = productVariantRepository.save(variant);
         
         // Add images for this variant
         if (request.imageUrls() != null && !request.imageUrls().isEmpty()) {
             for (int i = 0; i < request.imageUrls().size(); i++) {
-                ProductImage image = ProductImage.builder()
-                    .productId(productId)
-                    .variantId(variant.getId())
-                    .url(request.imageUrls().get(i))
-                    .sortOrder(i)
-                    .isPrimary(i == 0)
-                    .build();
+                ProductImage image = new ProductImage();
+                image.setProduct(product);
+                image.setVariant(variant);
+                image.setUrl(request.imageUrls().get(i));
+                image.setSortOrder(i);
+                image.setIsPrimary(i == 0);
                 productImageRepository.save(image);
             }
         }
@@ -341,7 +350,7 @@ public class ProductService {
         }
 
         // Remove primary flag from other images
-        Long productId = image.getProductId();
+        UUID productId = image.getProductId();
         List<ProductImage> images = productImageRepository.findByProductIdOrderBySortOrder(productId);
         images.forEach(img -> img.setIsPrimary(false));
         productImageRepository.saveAll(images);

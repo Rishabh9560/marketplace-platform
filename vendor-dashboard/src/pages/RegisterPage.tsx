@@ -2,8 +2,9 @@ import React, { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuthStore } from '@/store'
 import { validateEmail, validatePhone } from '@/lib/utils'
-import { Button, Input, Card } from '@/components/common'
+import { Button, Input } from '@/components/common'
 import { AlertCircle, Mail, Lock, Phone, Building2, User } from 'lucide-react'
+import { VendorProfile } from '@/types'
 
 export const RegisterPage: React.FC = () => {
   const navigate = useNavigate()
@@ -99,7 +100,8 @@ export const RegisterPage: React.FC = () => {
       }
 
       if (response.success) {
-        login(response.data.token, response.data.vendor)
+        const vendor = response.data.vendor as any
+        login(response.data.token, vendor as VendorProfile)
         navigate('/kyc')
       }
     } catch (err) {

@@ -1,7 +1,14 @@
 package com.logicveda.marketplace.product.controller;
 
 import com.logicveda.marketplace.common.security.JwtUserPrincipal;
-import com.logicveda.marketplace.product.dto.ProductDtos.*;
+import com.logicveda.marketplace.product.dto.CategoryResponse;
+import com.logicveda.marketplace.product.dto.CreateProductRequest;
+import com.logicveda.marketplace.product.dto.CreateVariantRequest;
+import com.logicveda.marketplace.product.dto.ImageResponse;
+import com.logicveda.marketplace.product.dto.ProductResponse;
+import com.logicveda.marketplace.product.dto.UpdateProductRequest;
+import com.logicveda.marketplace.product.dto.UpdateVariantRequest;
+import com.logicveda.marketplace.product.dto.VariantResponse;
 import com.logicveda.marketplace.product.service.ProductService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;

@@ -1,5 +1,6 @@
 package com.logicveda.marketplace.vendor.exception;
 
+import com.logicveda.marketplace.vendor.util.ApiResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -21,35 +22,31 @@ import java.util.Map;
 @RestControllerAdvice
 public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
-    private static final String TRACE_ID_HEADER = "X-Trace-ID";
-
     /**
      * Handle VendorException
      */
     @ExceptionHandler(VendorException.class)
-    public ResponseEntity<ErrorResponse> handleVendorException(
+    public ResponseEntity<ApiResponse<Object>> handleVendorException(
             VendorException ex,
             WebRequest request) {
 
-        ErrorResponse errorResponse = ErrorResponse.builder()
-            .statusCode(ex.getStatusCode().value())
-            .errorCode(ex.getErrorCode())
-            .message(ex.getMessage())
-            .path(request.getDescription(false).replace("uri=", ""))
-            .timestamp(LocalDateTime.now())
-            .traceId(getTraceId(request))
-            .build();
-
         log.warn("VendorException: {} - {}", ex.getErrorCode(), ex.getMessage());
 
-        return new ResponseEntity<>(errorResponse, ex.getStatusCode());
+        return new ResponseEntity<>(
+            ApiResponse.builder()
+                .statusCode(ex.getStatusCode().value())
+                .message(ex.getMessage())
+                .timestamp(LocalDateTime.now().toString())
+                .build(),
+            ex.getStatusCode()
+        );
     }
 
     /**
      * Handle validation errors
      */
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<ErrorResponse> handleValidationException(
+    public ResponseEntity<ApiResponse<Object>> handleValidationException(
             MethodArgumentNotValidException ex,
             WebRequest request) {
 
@@ -60,70 +57,57 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
             errors.put(fieldName, message);
         });
 
-        ErrorResponse errorResponse = ErrorResponse.builder()
-            .statusCode(HttpStatus.BAD_REQUEST.value())
-            .errorCode("VALIDATION_ERROR")
-            .message("Validation failed")
-            .path(request.getDescription(false).replace("uri=", ""))
-            .timestamp(LocalDateTime.now())
-            .traceId(getTraceId(request))
-            .details(errors.toString())
-            .build();
-
         log.warn("Validation error: {}", errors);
 
-        return new ResponseEntity<>(errorResponse, HttpStatus.BAD_REQUEST);
+        return new ResponseEntity<>(
+            ApiResponse.builder()
+                .statusCode(400)
+                .message("Validation failed: " + errors.toString())
+                .timestamp(LocalDateTime.now().toString())
+                .build(),
+            HttpStatus.BAD_REQUEST
+        );
     }
 
     /**
      * Handle IllegalArgumentException
      */
     @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<ErrorResponse> handleIllegalArgumentException(
+    public ResponseEntity<ApiResponse<Object>> handleIllegalArgumentException(
             IllegalArgumentException ex,
             WebRequest request) {
 
-        ErrorResponse errorResponse = ErrorResponse.builder()
-            .statusCode(HttpStatus.BAD_REQUEST.value())
-            .errorCode("ILLEGAL_ARGUMENT")
-            .message(ex.getMessage())
-            .path(request.getDescription(false).replace("uri=", ""))
-            .timestamp(LocalDateTime.now())
-            .traceId(getTraceId(request))
-            .build();
-
         log.warn("Illegal argument: {}", ex.getMessage());
 
-        return new ResponseEntity<>(errorResponse, HttpStatus.BAD_REQUEST);
+        return new ResponseEntity<>(
+            ApiResponse.builder()
+                .statusCode(400)
+                .message(ex.getMessage())
+                .timestamp(LocalDateTime.now().toString())
+                .build(),
+            HttpStatus.BAD_REQUEST
+        );
     }
 
     /**
      * Handle generic exceptions
      */
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<ErrorResponse> handleGlobalException(
+    public ResponseEntity<ApiResponse<Object>> handleGlobalException(
             Exception ex,
             WebRequest request) {
 
-        ErrorResponse errorResponse = ErrorResponse.builder()
-            .statusCode(HttpStatus.INTERNAL_SERVER_ERROR.value())
-            .errorCode("INTERNAL_SERVER_ERROR")
-            .message("An unexpected error occurred")
-            .path(request.getDescription(false).replace("uri=", ""))
-            .timestamp(LocalDateTime.now())
-            .traceId(getTraceId(request))
-            .build();
+        log.error("Unexpected error: {}", ex.getMessage(), ex);
 
-        log.error("Unexpected error", ex);
+        String errorMessage = ex.getMessage() != null ? ex.getMessage() : "An unexpected error occurred";
 
-        return new ResponseEntity<>(errorResponse, HttpStatus.INTERNAL_SERVER_ERROR);
-    }
-
-    /**
-     * Extract trace ID from request
-     */
-    private String getTraceId(WebRequest request) {
-        String traceId = request.getHeader(TRACE_ID_HEADER);
-        return traceId != null ? traceId : "N/A";
+        return new ResponseEntity<>(
+            ApiResponse.builder()
+                .statusCode(500)
+                .message(errorMessage)
+                .timestamp(LocalDateTime.now().toString())
+                .build(),
+            HttpStatus.INTERNAL_SERVER_ERROR
+        );
     }
 }

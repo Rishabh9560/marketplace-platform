@@ -1,7 +1,8 @@
 import React from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useAuthStore } from '@/store'
-import { Menu, X, LogOut, User, Settings } from 'lucide-react'
+import { Menu, X, LogOut } from 'lucide-react'
+import { VendorNotificationBell } from './common/VendorNotificationBell'
 
 export const Navigation: React.FC = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false)
@@ -11,9 +12,12 @@ export const Navigation: React.FC = () => {
   const navItems = [
     { label: 'Dashboard', path: '/dashboard', icon: '📊' },
     { label: 'Listings', path: '/listings', icon: '📦' },
+    { label: 'Products', path: '/products', icon: '🛍️' },
+    { label: 'Shipping', path: '/shipping', icon: '📮' },
     { label: 'Payouts', path: '/payouts', icon: '💳' },
     { label: 'KYC', path: '/kyc', icon: '📋' },
     { label: 'Profile', path: '/profile', icon: '👤' },
+    { label: 'View Shop', path: '/shop', icon: '🏪' },
   ]
 
   const handleLogout = () => {
@@ -66,6 +70,8 @@ export const Navigation: React.FC = () => {
                 </div>
               )}
             </div>
+
+            <VendorNotificationBell />
 
             <button
               onClick={handleLogout}

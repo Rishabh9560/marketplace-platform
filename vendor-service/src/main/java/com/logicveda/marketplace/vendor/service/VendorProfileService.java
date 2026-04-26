@@ -112,13 +112,12 @@ public class VendorProfileService {
         // Validate commission rate if updating
         if (updateDTO.getCommissionRate() != null) {
             ValidationUtils.validateCommissionRate(updateDTO.getCommissionRate());
+            vendor.setCommissionRate(updateDTO.getCommissionRate());
         }
 
-        // Update fields
-        VendorProfile updatedVendor = vendorMapper.updateEntityFromDTO(updateDTO, vendor);
-        updatedVendor.setUpdatedAt(LocalDateTime.now());
+        vendor.setUpdatedAt(LocalDateTime.now());
 
-        VendorProfile savedVendor = vendorRepository.save(updatedVendor);
+        VendorProfile savedVendor = vendorRepository.save(vendor);
         log.info("Vendor updated successfully: {}", vendorId);
 
         return vendorMapper.toDTO(savedVendor);

@@ -1,0 +1,49 @@
+spring:
+  application:
+    name: product-service
+  
+  # Database Configuration
+  datasource:
+    url: jdbc:postgresql://marketplace-postgres:5432/marketplace
+    username: marketplace
+    password: Marketplace@123456789
+    driver-class-name: org.postgresql.Driver
+  
+  # JPA/Hibernate Configuration
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+    show-sql: false
+  
+  # Jackson Configuration
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+
+# Elasticsearch Configuration
+elasticsearch:
+  host: elasticsearch
+  port: 9200
+  index-name: products
+
+# Server Port
+server:
+  port: 8002
+  compression:
+    enabled: true
+
+logging:
+  level:
+    root: INFO
+    com.marketplace: DEBUG
+
+# Actuator
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics

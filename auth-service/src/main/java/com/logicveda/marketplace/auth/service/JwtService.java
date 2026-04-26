@@ -87,14 +87,13 @@ public class JwtService {
         String tokenHash = hashToken(token);
 
         // Store hashed token in database
-        RefreshToken refreshToken = RefreshToken.builder()
-                .userId(userId)
-                .tokenHash(tokenHash)
-                .expiresAt(expiryDate.toInstant()
-                        .atZone(ZoneId.systemDefault())
-                        .toLocalDateTime())
-                .revoked(false)
-                .build();
+        RefreshToken refreshToken = new RefreshToken();
+        refreshToken.setUserId(userId);
+        refreshToken.setTokenHash(tokenHash);
+        refreshToken.setExpiresAt(expiryDate.toInstant()
+                .atZone(ZoneId.systemDefault())
+                .toLocalDateTime());
+        refreshToken.setRevoked(false);
 
         refreshTokenRepository.save(refreshToken);
         return token;
@@ -105,7 +104,7 @@ public class JwtService {
      */
     public Claims validateAndGetClaims(String token) {
         try {
-            return Jwts.parserBuilder()
+            return Jwts.parser()
                     .setSigningKey(key)
                     .build()
                     .parseClaimsJws(token)

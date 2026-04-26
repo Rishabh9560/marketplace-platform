@@ -1,0 +1,106 @@
+# ============================================
+# CREDENTIALS & SENSITIVE DATA (NEVER PUSH)
+# ============================================
+# Environment files with secrets
+.env
+.env.local
+.env.*.local
+.env.production
+admin-dashboard/.env*
+frontend/.env*
+vendor-dashboard/.env*
+
+# Production configs with credentials
+application-prod.yml
+application-production.yml
+**/src/main/resources/application-prod.yml
+
+# Kubernetes secrets
+k8s/*secrets*
+k8s/02-secrets.yaml
+
+# API keys, passwords, certificates
+*.key
+*.pem
+credentials.json
+aws-credentials
+.aws/
+
+# ============================================
+# BUILD ARTIFACTS (GENERATED - DON'T PUSH)
+# ============================================
+target/
+build/
+dist/
+out/
+bin/
+*.class
+*.jar
+*.war
+*.zip
+*.tar.gz
+BOOT-INF/
+META-INF/
+
+# ============================================
+# IDE & EDITOR CONFIGURATIONS
+# ============================================
+.vscode/
+.idea/
+*.iml
+*.iws
+*.ipr
+.gradle/
+.classpath
+.project
+.settings/
+*.swp
+*.swo
+*~
+*.orig
+
+# ============================================
+# DEPENDENCIES & CACHE (DON'T PUSH)
+# ============================================
+node_modules/
+npm-debug.log
+yarn-error.log
+package-lock.json
+yarn.lock
+.m2/
+.gradle/cache/
+.pnp/
+
+# ============================================
+# DOCUMENTATION & NOTES (DON'T PUSH)
+# ============================================
+*.md
+!package.json
+!README.md  # IF YOU WANT TO KEEP ONE README
+
+# ============================================
+# DATABASE & LOGS (DON'T PUSH)
+# ============================================
+*.log
+*.sql
+!schema*.sql
+!add_*.sql
+!**/src/main/resources/**/*.sql
+database.sqlite
+.db/
+logs/
+
+# ============================================
+# OS FILES
+# ============================================
+.DS_Store
+Thumbs.db
+.AppleDouble
+.LSOverride
+
+# ============================================
+# DOCKER & KUBERNETES RUNTIME
+# ============================================
+.docker/
+.kube/
+.env.docker

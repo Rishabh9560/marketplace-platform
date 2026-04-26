@@ -2,6 +2,9 @@ package com.logicveda.marketplace.order.service;
 
 import com.logicveda.marketplace.common.exception.BusinessException;
 import com.logicveda.marketplace.common.exception.ResourceNotFoundException;
+import com.logicveda.marketplace.common.event.OrderCreatedEvent;
+import com.logicveda.marketplace.common.event.OrderStatusUpdatedEvent;
+import com.logicveda.marketplace.common.service.EventPublisher;
 import com.logicveda.marketplace.order.entity.Order;
 import com.logicveda.marketplace.order.entity.OrderItem;
 import com.logicveda.marketplace.order.repository.OrderItemRepository;
@@ -31,6 +34,7 @@ public class OrderService {
 
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
+    private final EventPublisher eventPublisher;
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ISO_DATE_TIME;
 
     // ============= ORDER MANAGEMENT =============
@@ -67,47 +71,59 @@ public class OrderService {
             .subtract(request.discountAmount() != null ? request.discountAmount() : BigDecimal.ZERO);
 
         // Create order
-        Order order = Order.builder()
-            .customerId(customerId)
-            .orderNumber(generateOrderNumber())
-            .status(Order.OrderStatus.PENDING)
-            .subtotal(subtotal)
-            .shippingCost(request.shippingCost() != null ? request.shippingCost() : BigDecimal.ZERO)
-            .taxAmount(request.taxAmount() != null ? request.taxAmount() : BigDecimal.ZERO)
-            .discountAmount(request.discountAmount() != null ? request.discountAmount() : BigDecimal.ZERO)
-            .totalAmount(totalAmount)
-            .shippingAddress(request.shippingAddress())
-            .shippingCity(request.shippingCity())
-            .shippingState(request.shippingState())
-            .shippingPostalCode(request.shippingPostalCode())
-            .billingAddress(request.billingAddress())
-            .billingCity(request.billingCity())
-            .billingState(request.billingState())
-            .billingPostalCode(request.billingPostalCode())
-            .notes(request.notes())
-            .build();
+        Order order = new Order();
+        order.setCustomerId(customerId);
+        order.setOrderNumber(generateOrderNumber());
+        order.setStatus(Order.OrderStatus.PENDING);
+        order.setSubtotal(subtotal);
+        order.setShippingCost(request.shippingCost() != null ? request.shippingCost() : BigDecimal.ZERO);
+        order.setTaxAmount(request.taxAmount() != null ? request.taxAmount() : BigDecimal.ZERO);
+        order.setDiscountAmount(request.discountAmount() != null ? request.discountAmount() : BigDecimal.ZERO);
+        order.setTotalAmount(totalAmount);
+        order.setShippingAddress(request.shippingAddress());
+        order.setShippingCity(request.shippingCity());
+        order.setShippingState(request.shippingState());
+        order.setShippingPostalCode(request.shippingPostalCode());
+        order.setBillingAddress(request.billingAddress());
+        order.setBillingCity(request.billingCity());
+        order.setBillingState(request.billingState());
+        order.setBillingPostalCode(request.billingPostalCode());
+        order.setNotes(request.notes());
 
         order = orderRepository.save(order);
         
         // Create order items
         for (CreateOrderItemRequest itemRequest : request.items()) {
-            OrderItem item = OrderItem.builder()
-                .orderId(order.getId())
-                .productId(itemRequest.getProductId())
-                .variantId(itemRequest.getVariantId())
-                .productName(itemRequest.getProductName())
-                .sku(itemRequest.getSku())
-                .vendorId(itemRequest.getVendorId())
-                .quantity(itemRequest.getQuantity())
-                .unitPrice(itemRequest.getUnitPrice())
-                .lineTotal(itemRequest.getLineTotal())
-                .fulfillmentStatus(OrderItem.FulfillmentStatus.PENDING)
-                .build();
+            OrderItem item = new OrderItem();
+            item.setOrderId(order.getId());
+            item.setProductId(itemRequest.getProductId());
+            item.setVariantId(itemRequest.getVariantId());
+            item.setProductName(itemRequest.getProductName());
+            item.setSku(itemRequest.getSku());
+            item.setVendorId(itemRequest.getVendorId());
+            item.setQuantity(itemRequest.getQuantity());
+            item.setUnitPrice(itemRequest.getUnitPrice());
+            item.setLineTotal(itemRequest.getLineTotal());
+            item.setFulfillmentStatus(OrderItem.FulfillmentStatus.PENDING);
 
             orderItemRepository.save(item);
         }
 
         log.info("Order created successfully: {} with ID: {}", order.getOrderNumber(), order.getId());
+
+        // TODO: Publish OrderCreatedEvent to Kafka for notifications and fulfillment
+        // OrderCreatedEvent event = OrderCreatedEvent.builder()
+        //     .orderId(order.getId().toString())
+        //     .customerId(customerId.toString())
+        //     .vendorId(request.items().get(0).getVendorId().toString())  // Primary vendor
+        //     .totalAmount(totalAmount)
+        //     .status("PENDING")
+        //     .createdAt(LocalDateTime.now())
+        //     .itemCount(request.items().size())
+        //     .build();
+        // eventPublisher.publishOrderCreated(event);
+        log.info("Order publishing skipped for order: {} (TODO: implement)", order.getId());
+
         return order;
     }
 
@@ -208,6 +224,8 @@ public class OrderService {
         Order order = orderRepository.findById(orderId)
             .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
 
+        Order.OrderStatus previousStatus = order.getStatus();
+
         order.setStatus(newStatus);
         order.setUpdatedAt(LocalDateTime.now());
 
@@ -222,6 +240,18 @@ public class OrderService {
 
         order = orderRepository.save(order);
         log.info("Order status updated to {} for order: {}", newStatus, orderId);
+
+        // TODO: Publish OrderStatusUpdatedEvent to Kafka
+        // OrderStatusUpdatedEvent event = OrderStatusUpdatedEvent.builder()
+        //     .orderId(orderId.toString())
+        //     .customerId(order.getCustomerId().toString())
+        //     .previousStatus(previousStatus.toString())
+        //     .newStatus(newStatus.toString())
+        //     .updatedAt(LocalDateTime.now())
+        //     .reason("Order status updated to " + newStatus)
+        //     .build();
+        // eventPublisher.publishOrderStatusUpdated(event);
+        log.info("Order status publishing skipped for order: {} ({} -> {})", orderId, previousStatus, newStatus);
 
         return order;
     }

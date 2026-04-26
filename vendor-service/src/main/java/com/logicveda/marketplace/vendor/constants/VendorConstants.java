@@ -70,7 +70,7 @@ public class VendorConstants {
     public static final String VENDOR_CREATED = "Vendor profile created successfully";
     public static final String VENDOR_UPDATED = "Vendor profile updated successfully";
     public static final String VENDOR_DELETED = "Vendor profile deleted successfully";
-    public static final String KYC_SUBMITTED = "KYC submitted successfully";
+    public static final String KYC_SUBMISSION_MESSAGE = "KYC submitted successfully";
     public static final String LISTING_CREATED = "Product listing created successfully";
     public static final String LISTING_UPDATED = "Product listing updated successfully";
     public static final String INVENTORY_UPDATED = "Inventory updated successfully";

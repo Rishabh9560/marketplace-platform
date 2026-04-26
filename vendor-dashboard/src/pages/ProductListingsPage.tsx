@@ -1,21 +1,30 @@
 import React, { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { Card, Button, Badge } from '@/components/common'
-import { formatCurrency, getStatusColor, formatDate } from '@/lib/utils'
+import { formatCurrency, getStatusColor } from '@/lib/utils'
+import { isDemoVendor } from '@/lib/vendorUtils'
 import { useProductListings } from '@/hooks/useApi'
 import { useAuthStore } from '@/store'
 import { Search, Plus, Edit2, Eye, Archive, Filter, ChevronLeft, ChevronRight, TrendingUp } from 'lucide-react'
 
 export const ProductListingsPage: React.FC = () => {
   const { vendor } = useAuthStore()
-  const { data: listings, loading } = useProductListings()
+  const { data: listings, loading, error, fetchListings } = useProductListings()
+  const isDemo = isDemoVendor(vendor)
 
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<string | null>(null)
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage] = useState(10)
 
-  // Mock product data
+  // Fetch vendor's product listings only for real vendors
+  useEffect(() => {
+    if (vendor?.id && !isDemo) {
+      fetchListings(vendor.id, 0, 100)
+    }
+  }, [vendor?.id, isDemo, fetchListings])
+
+  // Fallback mock product data
   const mockListings = [
     {
       id: '1',
@@ -67,7 +76,13 @@ export const ProductListingsPage: React.FC = () => {
     },
   ]
 
-  const filteredListings = mockListings.filter((item) => {
+  // For demo vendors: show mock data
+  // For real vendors: show ONLY real API data (even if empty)
+  const displayListings = isDemo 
+    ? mockListings 
+    : (listings && Array.isArray(listings) ? listings : [])
+
+  const filteredListings = displayListings.filter((item) => {
     const matchesSearch = item.productName
       .toLowerCase()
       .includes(searchTerm.toLowerCase())
@@ -98,13 +113,26 @@ export const ProductListingsPage: React.FC = () => {
         </Link>
       </div>
 
+      {/* Error Message */}
+      {error && (
+        <Card className="card-shadow bg-red-50 border border-red-200">
+          <div className="flex items-start gap-3">
+            <div className="text-red-600 text-lg">⚠️</div>
+            <div>
+              <p className="font-semibold text-red-900">Error loading products</p>
+              <p className="text-sm text-red-700 mt-1">{(error as any)?.message || 'Failed to fetch your product listings. Please try again.'}</p>
+            </div>
+          </div>
+        </Card>
+      )}
+
       {/* Stats Bar */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card className="card-shadow">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-gray-600 text-sm mb-1">Total Listings</p>
-              <p className="text-2xl font-bold">{mockListings.length}</p>
+              <p className="text-2xl font-bold">{displayListings.length}</p>
             </div>
             <div className="text-3xl">📦</div>
           </div>
@@ -115,7 +143,7 @@ export const ProductListingsPage: React.FC = () => {
             <div>
               <p className="text-gray-600 text-sm mb-1">Active</p>
               <p className="text-2xl font-bold">
-                {mockListings.filter((p) => p.status === 'ACTIVE').length}
+                {displayListings.filter((p) => p.status === 'ACTIVE').length}
               </p>
             </div>
             <div className="text-3xl">✅</div>
@@ -127,7 +155,7 @@ export const ProductListingsPage: React.FC = () => {
             <div>
               <p className="text-gray-600 text-sm mb-1">Out of Stock</p>
               <p className="text-2xl font-bold">
-                {mockListings.filter((p) => p.status === 'OUT_OF_STOCK').length}
+                {displayListings.filter((p) => p.status === 'OUT_OF_STOCK').length}
               </p>
             </div>
             <div className="text-3xl">⚠️</div>
@@ -139,7 +167,7 @@ export const ProductListingsPage: React.FC = () => {
             <div>
               <p className="text-gray-600 text-sm mb-1">Total Views</p>
               <p className="text-2xl font-bold">
-                {mockListings.reduce((sum, p) => sum + p.viewCount, 0).toLocaleString()}
+                {displayListings.reduce((sum, p) => sum + p.viewCount, 0).toLocaleString()}
               </p>
             </div>
             <div className="text-3xl">👁️</div>

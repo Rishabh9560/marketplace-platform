@@ -2,23 +2,32 @@ import React, { useState } from 'react'
 import { Card, Button, Input, Badge } from '@/components/common'
 import { useAuthStore } from '@/store'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { User, Building2, Mail, Phone, MapPin, Clock, Award, AlertCircle, Save } from 'lucide-react'
+import { User, Building2, Phone, MapPin, Clock, Award, AlertCircle, Save } from 'lucide-react'
 
 export const ProfilePage: React.FC = () => {
   const { vendor } = useAuthStore()
   const [isEditing, setIsEditing] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [showPasswordModal, setShowPasswordModal] = useState(false)
+  const [passwordLoading, setPasswordLoading] = useState(false)
+  const [passwordData, setPasswordData] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: '',
+  })
+  const [passwordError, setPasswordError] = useState('')
+  const [passwordSuccess, setPasswordSuccess] = useState('')
 
   const [formData, setFormData] = useState({
     businessName: vendor?.businessName || '',
     businessEmail: vendor?.businessEmail || '',
     businessPhone: vendor?.businessPhone || '',
-    businessAddress: '123 Main St, New York, NY 10001',
-    businessCity: 'New York',
-    businessState: 'NY',
-    businessPincode: '10001',
-    businessDescription: 'Premium electronics and gadgets retailer',
-    taxId: 'GST123456789',
+    businessAddress: vendor?.businessAddress || '',
+    businessCity: vendor?.businessCity || '',
+    businessState: vendor?.businessState || '',
+    businessPincode: vendor?.businessPostalCode || '',
+    businessDescription: vendor?.businessDescription || '',
+    taxId: vendor?.taxId || '',
   })
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -38,6 +47,57 @@ export const ProfilePage: React.FC = () => {
     } finally {
       setLoading(false)
     }
+  }
+
+  const handlePasswordChange = async () => {
+    // Validate password inputs
+    if (!passwordData.currentPassword || !passwordData.newPassword || !passwordData.confirmPassword) {
+      setPasswordError('All fields are required')
+      return
+    }
+
+    if (passwordData.newPassword !== passwordData.confirmPassword) {
+      setPasswordError('New passwords do not match')
+      return
+    }
+
+    if (passwordData.newPassword.length < 8) {
+      setPasswordError('New password must be at least 8 characters')
+      return
+    }
+
+    if (passwordData.currentPassword === passwordData.newPassword) {
+      setPasswordError('New password must be different from current password')
+      return
+    }
+
+    try {
+      setPasswordLoading(true)
+      setPasswordError('')
+      setPasswordSuccess('')
+
+      // Mock API call to change password
+      await new Promise((resolve) => setTimeout(resolve, 1500))
+
+      setPasswordSuccess('Password changed successfully!')
+      setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' })
+
+      // Close modal after 2 seconds
+      setTimeout(() => {
+        setShowPasswordModal(false)
+        setPasswordSuccess('')
+      }, 2000)
+    } catch (err) {
+      setPasswordError('Failed to change password. Please try again.')
+    } finally {
+      setPasswordLoading(false)
+    }
+  }
+
+  const handlePasswordInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target
+    setPasswordData((prev) => ({ ...prev, [name]: value }))
+    setPasswordError('')
   }
 
   return (
@@ -324,7 +384,11 @@ export const ProfilePage: React.FC = () => {
               <p className="font-medium text-gray-900">Change Password</p>
               <p className="text-sm text-gray-600">Update your password regularly</p>
             </div>
-            <Button variant="outline" size="sm">
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => setShowPasswordModal(true)}
+            >
               Change
             </Button>
           </div>
@@ -370,6 +434,95 @@ export const ProfilePage: React.FC = () => {
           </div>
         </div>
       </Card>
+
+      {/* Change Password Modal */}
+      {showPasswordModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <Card className="w-full max-w-md mx-4">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-lg font-bold text-gray-900">Change Password</h3>
+              <button
+                onClick={() => {
+                  setShowPasswordModal(false)
+                  setPasswordError('')
+                  setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' })
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                ✕
+              </button>
+            </div>
+
+            {passwordError && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex gap-2">
+                <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
+                <p className="text-sm text-red-800">{passwordError}</p>
+              </div>
+            )}
+
+            {passwordSuccess && (
+              <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                <p className="text-sm text-green-800">✓ {passwordSuccess}</p>
+              </div>
+            )}
+
+            <div className="space-y-4 mb-6">
+              <Input
+                label="Current Password"
+                type="password"
+                name="currentPassword"
+                value={passwordData.currentPassword}
+                onChange={handlePasswordInputChange}
+                placeholder="Enter your current password"
+                disabled={passwordLoading}
+              />
+
+              <Input
+                label="New Password"
+                type="password"
+                name="newPassword"
+                value={passwordData.newPassword}
+                onChange={handlePasswordInputChange}
+                placeholder="Enter your new password (min 8 characters)"
+                disabled={passwordLoading}
+              />
+
+              <Input
+                label="Confirm Password"
+                type="password"
+                name="confirmPassword"
+                value={passwordData.confirmPassword}
+                onChange={handlePasswordInputChange}
+                placeholder="Confirm your new password"
+                disabled={passwordLoading}
+              />
+            </div>
+
+            <div className="flex gap-3">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowPasswordModal(false)
+                  setPasswordError('')
+                  setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' })
+                }}
+                disabled={passwordLoading}
+                className="flex-1"
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                onClick={handlePasswordChange}
+                disabled={passwordLoading}
+                className="flex-1"
+              >
+                {passwordLoading ? 'Changing...' : 'Change Password'}
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
     </div>
   )
 }

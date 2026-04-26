@@ -27,6 +27,8 @@ public class AuthService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final EmailService emailService;
+    private final EmailTokenService emailTokenService;
 
     /**
      * Register a new user account.
@@ -42,18 +44,26 @@ public class AuthService {
         }
 
         // Create new user
-        User user = User.builder()
-                .email(request.email())
-                .passwordHash(passwordEncoder.encode(request.password()))
-                .fullName(request.fullName())
-                .phone(request.phone())
-                .role(User.UserRole.CUSTOMER)
-                .emailVerified(false)
-                .isActive(true)
-                .build();
+        User user = new User();
+        user.setEmail(request.email());
+        user.setPasswordHash(passwordEncoder.encode(request.password()));
+        user.setFullName(request.fullName());
+        user.setPhone(request.phone());
+        user.setRole(User.UserRole.CUSTOMER);
+        user.setEmailVerified(false);
+        user.setIsActive(true);
 
         user = userRepository.save(user);
         log.info("New user registered: {}", user.getId());
+
+        // Generate verification token and send email
+        String verificationToken = emailTokenService.generateVerificationToken(request.email());
+        try {
+            emailService.sendVerificationEmail(request.email(), verificationToken);
+            emailService.sendWelcomeEmail(request.email(), request.fullName());
+        } catch (Exception e) {
+            log.warn("Failed to send verification email for {}: {}", request.email(), e.getMessage());
+        }
 
         // Generate tokens
         JwtUserPrincipal principal = JwtUserPrincipal.create(
@@ -205,5 +215,77 @@ public class AuthService {
     public User getCurrentUser(String email) {
         return userRepository.findByEmail(email)
                 .orElseThrow(() -> new ResourceNotFoundException("User", email));
+    }
+
+    /**
+     * Verify user email address with token.
+     */
+    @Transactional
+    public void verifyEmail(String token) {
+        String email = emailTokenService.verifyEmailToken(token);
+        if (email == null) {
+            throw new BusinessException(
+                    "Invalid or expired verification token",
+                    "INVALID_VERIFICATION_TOKEN"
+            );
+        }
+
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new ResourceNotFoundException("User", email));
+
+        user.setEmailVerified(true);
+        userRepository.save(user);
+        
+        log.info("Email verified for user: {}", user.getId());
+    }
+
+    /**
+     * Initiate password reset by sending reset email.
+     */
+    @Transactional
+    public void forgotPassword(String email) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new ResourceNotFoundException("User", email));
+
+        // Generate password reset token
+        String resetToken = emailTokenService.generatePasswordResetToken(email);
+        
+        try {
+            emailService.sendPasswordResetEmail(email, resetToken);
+        } catch (Exception e) {
+            log.error("Failed to send password reset email: {}", e.getMessage());
+            throw new BusinessException("Failed to send password reset email", "EMAIL_SEND_FAILED");
+        }
+
+        log.info("Password reset email sent to: {}", email);
+    }
+
+    /**
+     * Reset user password with reset token.
+     */
+    @Transactional
+    public void resetPassword(String token, String newPassword) {
+        String email = emailTokenService.verifyPasswordResetToken(token);
+        if (email == null) {
+            throw new BusinessException(
+                    "Invalid or expired password reset token",
+                    "INVALID_RESET_TOKEN"
+            );
+        }
+
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new ResourceNotFoundException("User", email));
+
+        // Update password
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        userRepository.save(user);
+        
+        // Consume the token
+        emailTokenService.consumePasswordResetToken(token);
+        
+        // Revoke all existing refresh tokens
+        jwtService.revokeAllUserTokens(user.getId());
+
+        log.info("Password reset successfully for user: {}", user.getId());
     }
 }

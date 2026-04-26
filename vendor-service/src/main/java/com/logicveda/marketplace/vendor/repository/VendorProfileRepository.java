@@ -135,4 +135,14 @@ public interface VendorProfileRepository extends JpaRepository<VendorProfile, UU
            "AND v.isActive = true AND v.isSuspended = false " +
            "ORDER BY v.averageRating DESC, v.totalReviews DESC")
     Page<VendorProfile> findVerifiedVendorsByRating(Pageable pageable);
+
+    /**
+     * Find vendors by KYC status with pagination
+     */
+    Page<VendorProfile> findByKycStatus(VendorProfile.KYCStatus kycStatus, Pageable pageable);
+
+    /**
+     * Find vendors by multiple KYC statuses with pagination
+     */
+    Page<VendorProfile> findByKycStatusIn(List<VendorProfile.KYCStatus> kycStatuses, Pageable pageable);
 }

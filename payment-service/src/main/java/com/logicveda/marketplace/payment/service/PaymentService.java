@@ -2,6 +2,8 @@ package com.logicveda.marketplace.payment.service;
 
 import com.logicveda.marketplace.common.exception.BusinessException;
 import com.logicveda.marketplace.common.exception.ResourceNotFoundException;
+import com.logicveda.marketplace.common.event.PaymentProcessedEvent;
+import com.logicveda.marketplace.common.service.EventPublisher;
 import com.logicveda.marketplace.payment.entity.Transaction;
 import com.logicveda.marketplace.payment.repository.TransactionRepository;
 import com.stripe.Stripe;
@@ -19,7 +21,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import javax.annotation.PostConstruct;
+import jakarta.annotation.PostConstruct;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.HashMap;
@@ -37,6 +39,7 @@ import java.util.UUID;
 public class PaymentService {
 
     private final TransactionRepository transactionRepository;
+    private final EventPublisher eventPublisher;
 
     @Value("${stripe.api-key}")
     private String stripeApiKey;
@@ -76,19 +79,18 @@ public class PaymentService {
             Charge charge = Charge.create(chargeParams);
 
             // Create transaction record
-            Transaction transaction = Transaction.builder()
-                .orderId(orderId)
-                .customerId(customerId)
-                .stripePaymentMethodId(paymentMethodId)
-                .stripeChargeId(charge.getId())
-                .paymentMethod(Transaction.PaymentMethod.CARD)
-                .amount(amount)
-                .currency("USD")
-                .status(charge.getStatus().equals("succeeded") ? 
-                    Transaction.TransactionStatus.COMPLETED : Transaction.TransactionStatus.FAILED)
-                .processedAt(LocalDateTime.now())
-                .isRefunded(false)
-                .build();
+            Transaction transaction = new Transaction();
+            transaction.setOrderId(orderId);
+            transaction.setCustomerId(customerId);
+            transaction.setStripePaymentMethodId(paymentMethodId);
+            transaction.setStripeChargeId(charge.getId());
+            transaction.setPaymentMethod(Transaction.PaymentMethod.CARD);
+            transaction.setAmount(amount);
+            transaction.setCurrency("USD");
+            transaction.setStatus(charge.getStatus().equals("succeeded") ? 
+                Transaction.TransactionStatus.COMPLETED : Transaction.TransactionStatus.FAILED);
+            transaction.setProcessedAt(LocalDateTime.now());
+            transaction.setIsRefunded(false);
 
             if (!charge.getStatus().equals("succeeded")) {
                 transaction.setStatus(Transaction.TransactionStatus.FAILED);
@@ -98,26 +100,59 @@ public class PaymentService {
             transaction = transactionRepository.save(transaction);
             log.info("Payment processed successfully. Transaction ID: {}, Charge ID: {}", transaction.getId(), charge.getId());
 
-            // TODO: Publish PaymentConfirmed event to Kafka for order confirmation
+            // Publish PaymentProcessed event to Kafka
+            if (transaction.getStatus() == Transaction.TransactionStatus.COMPLETED) {
+                PaymentProcessedEvent event = PaymentProcessedEvent.builder()
+                    .paymentId(transaction.getId())
+                    .orderId(orderId)
+                    .customerId(customerId)
+                    .vendorId(transaction.getVendorId())
+                    .amount(amount)
+                    .paymentMethod("STRIPE_CARD")
+                    .status("COMPLETED")
+                    .transactionId(charge.getId())
+                    .processedAt(LocalDateTime.now())
+                    .build();
+                
+                eventPublisher.publishPaymentProcessed(event);
+                log.info("PaymentProcessedEvent published for order: {}", orderId);
+            }
+
             return transaction;
 
         } catch (StripeException e) {
             log.error("Stripe payment error: {}", e.getMessage());
             
             // Save failed transaction record
-            Transaction transaction = Transaction.builder()
-                .orderId(orderId)
-                .customerId(customerId)
-                .stripePaymentMethodId(paymentMethodId)
-                .paymentMethod(Transaction.PaymentMethod.CARD)
-                .amount(amount)
-                .currency("USD")
-                .status(Transaction.TransactionStatus.FAILED)
-                .failureReason(e.getMessage())
-                .isRefunded(false)
-                .build();
+            Transaction transaction = new Transaction();
+            transaction.setOrderId(orderId);
+            transaction.setCustomerId(customerId);
+            transaction.setStripePaymentMethodId(paymentMethodId);
+            transaction.setPaymentMethod(Transaction.PaymentMethod.CARD);
+            transaction.setAmount(amount);
+            transaction.setCurrency("USD");
+            transaction.setStatus(Transaction.TransactionStatus.FAILED);
+            transaction.setFailureReason(e.getMessage());
+            transaction.setIsRefunded(false);
 
             transactionRepository.save(transaction);
+
+            // Publish PaymentProcessed event with FAILED status
+            PaymentProcessedEvent event = PaymentProcessedEvent.builder()
+                .paymentId(transaction.getId())
+                .orderId(orderId)
+                .customerId(customerId)
+                .vendorId(transaction.getVendorId())
+                .amount(amount)
+                .paymentMethod("STRIPE_CARD")
+                .status("FAILED")
+                .transactionId("")
+                .processedAt(LocalDateTime.now())
+                .build();
+            
+            eventPublisher.publishPaymentProcessed(event);
+            log.info("PaymentProcessedEvent (FAILED) published for order: {}", orderId);
+
             throw new BusinessException("Payment processing failed: " + e.getMessage());
         }
     }
@@ -177,7 +212,22 @@ public class PaymentService {
             transaction = transactionRepository.save(transaction);
             log.info("Refund processed successfully. Transaction ID: {}, Refund ID: {}", transactionId, refund.getId());
 
-            // TODO: Publish PaymentRefunded event to Kafka for order cancellation
+            // Publish PaymentProcessed event with CANCELLED status (refund)
+            PaymentProcessedEvent event = PaymentProcessedEvent.builder()
+                .paymentId(transaction.getId())
+                .orderId(transaction.getOrderId())
+                .customerId(transaction.getCustomerId())
+                .vendorId(transaction.getVendorId())
+                .amount(transaction.getAmount())
+                .paymentMethod("STRIPE_CARD")
+                .status("CANCELLED")
+                .transactionId(refund.getId())
+                .processedAt(LocalDateTime.now())
+                .build();
+            
+            eventPublisher.publishPaymentProcessed(event);
+            log.info("PaymentProcessedEvent (CANCELLED via refund) published for order: {}", transaction.getOrderId());
+
             return transaction;
 
         } catch (StripeException e) {

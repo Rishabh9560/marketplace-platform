@@ -5,18 +5,19 @@ export interface VendorProfile {
   businessName: string
   businessEmail: string
   businessPhone: string
-  taxId: string
-  businessLicenseNumber: string
-  bankAccountNumber: string
+  taxId?: string
+  businessLicenseNumber?: string
+  bankAccountNumber?: string
   commissionRate: number
   kycStatus: 'PENDING' | 'SUBMITTED' | 'VERIFIED' | 'REJECTED' | 'SUSPENDED'
-  isActive: boolean
-  isSuspended: boolean
+  isActive?: boolean
+  isSuspended?: boolean
   totalEarnings: number
-  availableBalance: number
+  availableBalance?: number
   averageRating: number
   totalReviews: number
-  totalSales: number
+  totalSales?: number
+  accountStatus?: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED'
   createdAt: string
   updatedAt: string
 }
@@ -112,4 +113,9 @@ export interface DashboardSummary {
   kycStatus: string
   performanceScore: number
   averageRating: number
+  totalOrders?: number
+  averageOrderValue?: number
+  customerSatisfaction?: number
+  fulfillmentRate?: number
+  returnRate?: number
 }

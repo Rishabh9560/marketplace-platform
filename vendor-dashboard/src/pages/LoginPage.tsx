@@ -4,6 +4,7 @@ import { useAuthStore } from '@/store'
 import { validateEmail } from '@/lib/utils'
 import { Button, Input, Card } from '@/components/common'
 import { AlertCircle, Mail, Lock } from 'lucide-react'
+import { VendorProfile } from '@/types'
 
 export const LoginPage: React.FC = () => {
   const navigate = useNavigate()
@@ -38,6 +39,18 @@ export const LoginPage: React.FC = () => {
     try {
       setLoading(true)
 
+      // Determine if this is a demo vendor based on email
+      const isDemoEmail = email.toLowerCase().includes('demo') || email.toLowerCase().includes('test')
+      
+      // Generate unique vendor ID based on email hash
+      const emailHash = email
+        .split('')
+        .reduce((acc, char) => ((acc << 5) - acc) + char.charCodeAt(0), 0)
+        .toString()
+        .substring(0, 8)
+      
+      const vendorId = isDemoEmail ? '1' : `vendor-${emailHash}`
+
       // Mock API call for authentication
       // In real app, this would call the backend
       const response = {
@@ -45,17 +58,17 @@ export const LoginPage: React.FC = () => {
         data: {
           token: `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...${Date.now()}`,
           vendor: {
-            id: '1',
-            userId: 'user-123',
-            businessName: 'Sample Vendor Store',
+            id: vendorId,
+            userId: `user-${emailHash}`,
+            businessName: isDemoEmail ? 'Sample Vendor Store' : `${email.split('@')[0]}'s Store`,
             businessEmail: email,
             businessPhone: '+1234567890',
             kycStatus: 'VERIFIED',
             commissionRate: 5,
-            totalEarnings: 15000,
-            availableBalance: 3500,
-            averageRating: 4.5,
-            totalReviews: 124,
+            totalEarnings: isDemoEmail ? 15000 : 0,
+            availableBalance: isDemoEmail ? 3500 : 0,
+            averageRating: isDemoEmail ? 4.5 : 0,
+            totalReviews: isDemoEmail ? 124 : 0,
             accountStatus: 'ACTIVE',
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
@@ -64,7 +77,8 @@ export const LoginPage: React.FC = () => {
       }
 
       if (response.success) {
-        login(response.data.token, response.data.vendor)
+        const vendor = response.data.vendor as any
+        login(response.data.token, vendor as VendorProfile)
         if (rememberMe) {
           localStorage.setItem('rememberMe', email)
         }

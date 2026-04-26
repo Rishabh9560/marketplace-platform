@@ -144,8 +144,8 @@ public class AuthController {
         @ApiResponse(responseCode = "400", description = "Invalid verification token")
     })
     public ResponseEntity<String> verifyEmail(@RequestParam String token) {
-        // TODO: Implement email verification with Redis token storage
-        return ResponseEntity.ok("Email verification not yet implemented");
+        authService.verifyEmail(token);
+        return ResponseEntity.ok("Email verified successfully");
     }
 
     /**
@@ -158,7 +158,11 @@ public class AuthController {
         @ApiResponse(responseCode = "404", description = "User not found")
     })
     public ResponseEntity<String> forgotPassword(@RequestBody java.util.Map<String, String> request) {
-        // TODO: Implement password reset flow with Redis token + email notification
+        String email = request.get("email");
+        if (email == null || email.isEmpty()) {
+            return ResponseEntity.badRequest().body("Email is required");
+        }
+        authService.forgotPassword(email);
         return ResponseEntity.ok("Password reset email sent");
     }
 
@@ -172,7 +176,12 @@ public class AuthController {
         @ApiResponse(responseCode = "400", description = "Invalid reset token")
     })
     public ResponseEntity<String> resetPassword(@RequestBody java.util.Map<String, String> request) {
-        // TODO: Implement password reset with token validation and new password setting
+        String token = request.get("token");
+        String newPassword = request.get("new_password");
+        if (token == null || newPassword == null) {
+            return ResponseEntity.badRequest().body("Token and new_password are required");
+        }
+        authService.resetPassword(token, newPassword);
         return ResponseEntity.ok("Password reset successful");
     }
 

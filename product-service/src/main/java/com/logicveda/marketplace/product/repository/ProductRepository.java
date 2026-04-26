@@ -35,7 +35,7 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
     /**
      * Find all featured products.
      */
-    List<Product> findByStatusAndIsFeatureTrue(Product.ProductStatus status, Pageable pageable);
+    Page<Product> findByStatusAndIsFeaturedTrue(Product.ProductStatus status, Pageable pageable);
 
     /**
      * Find all products pending approval.
@@ -52,8 +52,21 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
      */
     Page<Product> findByCategoryIdAndStatus(UUID categoryId, Product.ProductStatus status, Pageable pageable);
 
+    /**     * Find products by vendor ID with pagination.
+     */
+    Page<Product> findByVendorId(UUID vendorId, Pageable pageable);
+
     /**
-     * Search products by name or description.
+     * Find products by vendor ID without pagination.
+     */
+    List<Product> findByVendorId(UUID vendorId);
+
+    /**
+     * Search products by name (case-insensitive) with pagination.
+     */
+    Page<Product> findByNameContainingIgnoreCase(String name, Pageable pageable);
+
+    /**     * Search products by name or description.
      */
     @Query("SELECT p FROM Product p WHERE p.status = 'APPROVED' AND (" +
            "LOWER(p.name) LIKE LOWER(CONCAT('%', :query, '%')) OR " +

@@ -7,6 +7,10 @@ export const formatCurrency = (value: number): string => {
   }).format(value)
 }
 
+export const formatNumber = (value: number): string => {
+  return new Intl.NumberFormat('en-US').format(value)
+}
+
 export const formatDate = (dateString: string | Date, formatStr = 'MMM dd, yyyy'): string => {
   try {
     const date = typeof dateString === 'string' ? parseISO(dateString) : dateString
