@@ -1,203 +1,191 @@
-# Secure Multi-Vendor E-Commerce Marketplace Platform
+# Marketplace Platform - Multi-Vendor E-Commerce
 
-**Production-Grade Java Full-Stack Application**  
-*Spring Boot 3.3 | React 19 | PostgreSQL 17 | Redis 7 | Elasticsearch 8 | Kafka | Kubernetes*
+A production-ready e-commerce platform built with **Java & React**.
 
----
-
-## 📋 Project Overview
-
-This is a complete, production-ready e-commerce marketplace platform supporting:
-- ✅ **Multi-Vendor Support** - Multiple sellers with commission management
-- ✅ **Real-Time Features** - WebSocket for order tracking, live notifications
-- ✅ **Advanced Search** - Elasticsearch with fuzzy, facets, autocomplete
-- ✅ **Enterprise Security** - JWT with token rotation, Argon2 hashing, OWASP Top 10 mitigations
-- ✅ **Scalability** - Horizontal scaling with Kubernetes, Redis caching, database read replicas
-- ✅ **Event-Driven** - Apache Kafka for asynchronous processing
-- ✅ **Full Observability** - Prometheus, Grafana, Sentry, OpenTelemetry
-
-**Target Metrics:**
-- Support 50k-500k concurrent users (peak load)
-- p99 API latency < 250ms
-- 99.95% uptime SLA
-- Zero-downtime deployments
+**Tech Stack:** Spring Boot 3.3 | React 19 | PostgreSQL | Redis | Elasticsearch | Kafka | Docker | Kubernetes
 
 ---
 
-## 🏗️ Project Structure
+## 🎯 Features
+
+✅ **Multi-Vendor Marketplace** - Multiple sellers with commission management  
+✅ **User Authentication** - JWT tokens with refresh mechanism  
+✅ **Product Catalog** - Advanced search with Elasticsearch  
+✅ **Shopping Cart** - Real-time cart management  
+✅ **Payment Processing** - Stripe integration  
+✅ **Order Management** - Order tracking & status updates  
+✅ **Vendor Dashboard** - Manage products, KYC, payouts  
+✅ **Admin Dashboard** - Monitor vendors, orders, analytics  
+✅ **WebSocket Notifications** - Real-time order/notification updates  
+✅ **Scalable Architecture** - Kubernetes-ready with microservices  
+
+---
+
+## 📁 Project Structure
 
 ```
 marketplace-platform/
-├── pom.xml                          # Parent POM with dependency management
-├── common/                          # Shared module (DTOs, security, exceptions, utils)
-├── auth-service/                    # JWT authentication & user management
-├── product-service/                 # Product catalog & search (Elasticsearch)
-├── order-service/                   # Order processing & state machine
-├── payment-service/                 # Payment processing & Stripe integration
-├── vendor-service/                  # Vendor onboarding & KYC
-├── notification-service/            # Email/SMS notifications (SendGrid, Twilio)
-├── search-service/                  # Advanced search & recommendations
-├── api-gateway/                     # Spring Cloud Gateway (routing, rate limiting)
-└── frontend/                        # React 19 + TypeScript + Vite
+├── auth-service/        # User login & authentication
+├── product-service/     # Product catalog & search
+├── order-service/       # Order processing
+├── payment-service/     # Payment handling
+├── vendor-service/      # Vendor management & KYC
+├── notification-service/# Notifications (email, SMS)
+├── search-service/      # Elasticsearch integration
+├── api-gateway/         # API routing & rate limiting
+├── admin-dashboard/     # Admin React dashboard
+├── vendor-dashboard/    # Vendor React dashboard
+├── frontend/            # Customer React frontend
+└── docker-compose.yml   # All services in containers
 ```
 
 ---
 
-## ✅ What's Already Built (Week 1 - Core Backend)
-
-### Completed Services (95% done):
-
-#### 1. **Auth Service** ✅ COMPLETE
-- User registration & login
-- JWT access tokens (15 min) + refresh tokens (14 days) with rotation
-- Token revocation & logout from all devices
-- Argon2id password hashing (OWASP recommended)
-- Spring Security with stateless authentication
-- Database-backed refresh token tracking
-
-**Files:**
-```
-auth-service/
-├── entity/RefreshToken.java          # Refresh token entity with validation
-├── repository/UserRepository.java     # User database queries
-├── repository/RefreshTokenRepository.java
-├── service/JwtService.java            # Core JWT operations (850+ lines)
-├── service/AuthService.java           # Auth business logic
-├── filter/JwtAuthenticationFilter.java # JWT extraction & validation
-├── config/SecurityConfig.java         # Spring Security configuration
-├── controller/AuthController.java     # REST endpoints with OpenAPI
-├── db/migration/V001__Initial_Auth_Schema.sql # Database schema
-└── application.yaml                   # Configuration
-```
-
-**Endpoints:**
-```
-POST   /api/auth/signup              # User registration
-POST   /api/auth/login               # User login
-POST   /api/auth/refresh             # Refresh access token
-POST   /api/auth/logout              # Revoke all tokens
-GET    /api/auth/me                  # Get current user
-GET    /api/auth/verify-email        # Email verification (TODO)
-POST   /api/auth/forgot-password     # Password reset request (TODO)
-POST   /api/auth/reset-password      # Reset password (TODO)
-```
-
-**Key Features:**
-- ✅ Email uniqueness validation
-- ✅ Rate limiting on login (5 attempts/minute via Bucket4j)
-- ✅ Token hashing in database for security
-- ✅ CORS configured for frontend
-- ✅ Full OpenAPI/Swagger documentation
-- ✅ Comprehensive error handling
-
-#### 2. **Common Module** ✅ COMPLETE
-Shared utilities, entities, and security configurations used by all services.
-
-**Contents:**
-```
-common/
-├── entity/User.java                 # User entity with roles
-├── entity/Vendor.java               # Vendor entity with KYC status
-├── dto/SignupRequest.java           # Request DTOs (record types)
-├── dto/LoginRequest.java
-├── dto/AuthResponse.java
-├── dto/ErrorResponse.java
-├── exception/BusinessException.java # Base exception class
-├── exception/ResourceNotFoundException.java
-├── security/JwtUserPrincipal.java   # JWT user principal
-├── util/StringUtils.java            # Utility functions (slug generation, etc.)
-└── pom.xml                          # Dependencies for all services
-```
-
-#### 3. **Product Service** ⚠️ PARTIAL (40%)
-Database schema, entities, DTOs, and repositories created. Service layer ready.
-
-**Completed:**
-- ✅ Product, ProductVariant, ProductImage, Category entities
-- ✅ Database schema with proper indexing
-- ✅ Flyway migrations (V002__Product_Catalog_Schema.sql)
-- ✅ Repository interfaces with advanced queries
-- ✅ Comprehensive DTOs for requests/responses
-- ✅ SQL schema with JSONB support for variant attributes
-
-**Still Needed:**
-- Product service business logic
-- Elasticsearch integration
-- Product search controller
-- Kafka event publishing
-
----
-
-## 🚀 Getting Started
+## 🚀 Quick Start
 
 ### Prerequisites
-```bash
-# Required tools
-- Java 21 JDK
-  Download: https://adoptium.net/temurin/releases/
-  
+```
+- Java 21
 - Maven 3.9+
-  Download: https://maven.apache.org/download.cgi
-  
-- PostgreSQL 17
-  Docker: docker run -d -e POSTGRES_PASSWORD=marketplace123 \
-           -e POSTGRES_DB=marketplace_auth \
-           -p 5432:5432 postgres:17
-           
-- Redis 7
-  Docker: docker run -d -p 6379:6379 redis:7
-  
-- Elasticsearch 8
-  Docker: docker run -d -e discovery.type=single-node \
-           -p 9200:9200 docker.elastic.co/elasticsearch/elasticsearch:8.11.0
-           
 - Docker & Docker Compose
-  Download: https://www.docker.com/products/docker-desktop
 ```
 
-### Build & Run
+### Run Everything with Docker
 
 ```bash
-# Clone/navigate to project
+# Clone the repository
+git clone https://github.com/Rishabh9560/marketplace-platform.git
 cd marketplace-platform
 
-# Build entire project
-mvn clean install -DskipTests
+# Start all services
+docker-compose up -d
 
-# Run Auth Service (development mode)
-cd auth-service
-mvn spring-boot:run -Dspring-boot.run.arguments="--spring.profiles.active=local"
-
-# Service will start on http://localhost:8081
-# Swagger UI available at http://localhost:8081/swagger-ui.html
+# Access the application
+Frontend:  http://localhost:3000
+Admin:     http://localhost:3001
+Vendor:    http://localhost:3002
+API:       http://localhost:8080/api
+Swagger:   http://localhost:8080/swagger-ui.html
 ```
 
-### Test Auth Service
+### Local Development (Maven)
 
 ```bash
-# 1. Register new user
-curl -X POST http://localhost:8081/api/auth/signup \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "user@example.com",
-    "password": "SecurePass123!",
-    "fullName": "John Doe",
-    "phone": "+919876543210"
-  }'
+# Build all services
+mvn clean install
 
-# Response (copy the access_token):
-{
-  "access_token": "eyJhbGc...",
-  "refresh_token": "eyJhbGc...",
-  "userId": "550e8400-...",
-  "email": "user@example.com",
-  "fullName": "John Doe",
-  "role": "CUSTOMER",
-  "expires_in": 900
-}
+# Run individual service
+cd auth-service
+mvn spring-boot:run
 
-# 2. Login with email/password
-curl -X POST http://localhost:8081/api/auth/login \
+# Service will run on http://localhost:8081
+```
+
+---
+
+## 📋 API Endpoints
+
+### Authentication
+```
+POST   /api/auth/signup      - User registration
+POST   /api/auth/login       - User login
+POST   /api/auth/refresh     - Refresh access token
+GET    /api/auth/me          - Get current user
+```
+
+### Products
+```
+GET    /api/products         - List products
+POST   /api/products         - Create product (vendor)
+GET    /api/products/{id}    - Get product details
+PUT    /api/products/{id}    - Update product (vendor)
+DELETE /api/products/{id}    - Delete product (vendor)
+```
+
+### Orders
+```
+POST   /api/orders           - Create order
+GET    /api/orders           - Get my orders
+GET    /api/orders/{id}      - Get order details
+```
+
+### Cart
+```
+GET    /api/cart             - Get cart
+POST   /api/cart/items       - Add to cart
+PUT    /api/cart/items/{id}  - Update cart item
+DELETE /api/cart/items/{id}  - Remove from cart
+```
+
+---
+
+## 🔧 Configuration
+
+### Environment Variables
+Create a `.env` file in the root directory:
+```
+POSTGRES_USER=marketplace
+POSTGRES_PASSWORD=password123
+POSTGRES_DB=marketplace
+REDIS_URL=redis://redis:6379
+ELASTICSEARCH_URL=http://elasticsearch:9200
+JWT_SECRET=your-secret-key-here
+STRIPE_KEY=sk_test_xxxxx
+```
+
+### Database Setup
+```bash
+# Migrations run automatically via Flyway
+# Initial schema: src/main/resources/db/migration/
+```
+
+---
+
+## 🧪 Testing
+
+```bash
+# Run tests
+mvn test
+
+# Run tests with coverage
+mvn test jacoco:report
+```
+
+---
+
+## 📦 Deployment
+
+### Docker
+```bash
+# Build image
+docker build -t marketplace:latest .
+
+# Run container
+docker run -p 8080:8080 marketplace:latest
+```
+
+### Kubernetes
+```bash
+# Deploy to K8s
+kubectl apply -f k8s/
+
+# Check pods
+kubectl get pods
+kubectl logs <pod-name>
+```
+
+---
+
+## 📞 Support & Contact
+
+- **GitHub Issues:** [Report a bug](https://github.com/Rishabh9560/marketplace-platform/issues)
+- **Email:** rishabh@example.com
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License
   -H "Content-Type: application/json" \
   -d '{
     "email": "user@example.com",
@@ -491,5 +479,6 @@ This project is proprietary and confidential for LogicVeda Java Full Stack Domai
 **Version**: 6.0 - Ultra-Detailed Industry Edition  
 **Last Updated**: March 2026  
 **Status**: Production-Ready (Partial - Auth & Product Schema Complete)
-#   T e s t  
+#   T e s t 
+ 
  
