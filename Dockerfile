@@ -3,13 +3,15 @@ FROM eclipse-temurin:21-jdk-alpine AS builder
 
 WORKDIR /build
 
-# Copy source code
-COPY ./ ./
+# Copy pom files first
+COPY pom.xml .
+COPY common/ common/
+COPY vendor-service/ vendor-service/
 
-# Build the application with Maven
+# Install Maven and build
 RUN apk add --no-cache maven && \
-    mvn clean install -DskipTests -q && \
-    mvn package -f vendor-service/pom.xml -DskipTests -q
+    mvn -B clean install -DskipTests -q -o 2>/dev/null || \
+    mvn -B clean install -DskipTests -q
 
 # Final image
 FROM eclipse-temurin:21-jre-alpine
