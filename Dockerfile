@@ -6,8 +6,10 @@ WORKDIR /build
 # Copy entire project
 COPY . .
 
-# Build all modules
-RUN mvn -B -X clean install -DskipTests 2>&1 | head -100
+# Build vendor-service with dependencies from project root
+# -pl: build only vendor-service module
+# -am: also-make builds local dependencies first (marketplace-common)
+RUN mvn clean package -pl vendor-service -am -DskipTests --quiet
 
 # Final stage
 FROM eclipse-temurin:21-jre-alpine
