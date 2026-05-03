@@ -8,8 +8,8 @@ COPY ./ ./
 
 # Build the application with Maven
 RUN apk add --no-cache maven && \
-    cd vendor-service && \
-    mvn clean package -DskipTests -X --quiet
+    mvn clean install -DskipTests -q && \
+    mvn package -f vendor-service/pom.xml -DskipTests -q
 
 # Final image
 FROM eclipse-temurin:21-jre-alpine
